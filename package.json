@@ -1,0 +1,94 @@
+{
+  "name": "@andrei.fyi/picocli",
+  "version": "0.1.0",
+  "description": "Tiny CLI framework for Node and Bun.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22",
+    "bun": ">=1.1.0"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./mcp": {
+      "import": {
+        "types": "./dist/mcp/index.d.ts",
+        "default": "./dist/mcp/index.js"
+      },
+      "require": {
+        "types": "./dist/mcp/index.d.cts",
+        "default": "./dist/mcp/index.cjs"
+      }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing/testkit.d.ts",
+        "default": "./dist/testing/testkit.js"
+      },
+      "require": {
+        "types": "./dist/testing/testkit.d.cts",
+        "default": "./dist/testing/testkit.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "mcp": [
+        "./dist/mcp/index.d.cts"
+      ],
+      "testing": [
+        "./dist/testing/testkit.d.cts"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "tsup",
+    "examples:typecheck": "tsc --noEmit --module Preserve --moduleResolution bundler --target ESNext --lib ESNext --types node,bun --strict --skipLibCheck examples/**/*.ts",
+    "examples:check": "bun run scripts/check-examples.mjs",
+    "smoke:node": "node ./scripts/smoke-dist.mjs",
+    "smoke:bun": "bun run ./scripts/smoke-dist.mjs",
+    "publint": "bunx publint --level=warning",
+    "attw": "bunx -p @arethetypeswrong/cli attw --pack .",
+    "prepack": "bun run build",
+    "verify": "tsc --noEmit && bun test && tsup && node ./scripts/smoke-dist.mjs && bun run ./scripts/smoke-dist.mjs && bun run examples:typecheck && bun run examples:check && bunx publint --level=warning && bun run attw"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/bun": "^1.2.21",
+    "@types/node": "^24.5.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "zod": "^4.3.6"
+  }
+}
