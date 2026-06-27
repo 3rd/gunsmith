@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import type { CommandErrorResult } from "../types/result";
-import { PicocliError } from "../errors";
+import { GunsmithError } from "../errors";
 import cli from "../index";
 import { runCli, runJson } from "../testing/testkit";
 
@@ -315,10 +315,10 @@ describe("--format overrides", () => {
 });
 
 describe("error rendering", () => {
-  test("thrown PicocliError renders its code", async () => {
+  test("thrown GunsmithError renders its code", async () => {
     const a = cli.create("e", {
       run: () => {
-        throw new PicocliError("VALIDATION", "oops");
+        throw new GunsmithError("VALIDATION", "oops");
       },
     });
     const r = await runCli(a, [], noColor);

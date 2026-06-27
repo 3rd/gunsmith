@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import type { CommandErrorResult } from "../types/result";
-import { PicocliError } from "../errors";
+import { GunsmithError } from "../errors";
 import cli from "../index";
 import { runCli, runJson } from "../testing/testkit";
 
@@ -201,20 +201,20 @@ describe("globals", () => {
 });
 
 describe("exit codes", () => {
-  test("thrown PicocliError -> structured failure", async () => {
+  test("thrown GunsmithError -> structured failure", async () => {
     const app = cli.create("x", {
       run: () => {
-        throw new PicocliError("VALIDATION", "bad");
+        throw new GunsmithError("VALIDATION", "bad");
       },
     });
     const r = await runJson(app, []);
     expect(r.exitCode).toBe(2);
     expect(expectCommandErrorResult(r.json).error).toEqual({ code: "VALIDATION", message: "bad" });
   });
-  test("thrown PicocliError -> stderr in human mode", async () => {
+  test("thrown GunsmithError -> stderr in human mode", async () => {
     const app = cli.create("x", {
       run: () => {
-        throw new PicocliError("VALIDATION", "bad");
+        throw new GunsmithError("VALIDATION", "bad");
       },
     });
     const r = await runCli(app, [], { isTTY: true, env: { NO_COLOR: "1" } });

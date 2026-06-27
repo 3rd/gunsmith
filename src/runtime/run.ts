@@ -1,6 +1,6 @@
 import type { AnyCommandDefinition, OutputValidationMode } from "../types/commands";
 import type { CommandRunContext, CommandRunResult } from "../types/execution";
-import { getExitCodeForError, isPicocliError } from "../errors";
+import { getExitCodeForError, isGunsmithError } from "../errors";
 import { parseOutputSchema } from "../schemas/validate";
 import { suppressedConsole, withConsoleCapture } from "./console";
 
@@ -21,7 +21,7 @@ const createUnknownErrorResult = (error: unknown, debug?: (message: string) => v
 };
 
 const createThrownErrorResult = (error: unknown, debug?: (message: string) => void): CommandRunResult => {
-  if (isPicocliError(error)) {
+  if (isGunsmithError(error)) {
     return {
       ok: false,
       error: { code: error.code, message: error.message },

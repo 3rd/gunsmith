@@ -43,40 +43,44 @@ assert.equal(typeof cjs.default.create, "function");
 assert.equal(typeof cjs.Cli, "function");
 
 // package exports
-const publicCore = await import("@andrei.fyi/picocli");
+const publicCore = await import("gunsmith");
 assert.equal(typeof publicCore.default.create, "function");
 assert.equal(typeof publicCore.create, "function");
 assert.equal(publicCore.create, publicCore.default.create);
 assert.equal(publicCore.command, publicCore.default.command);
 assert.equal(typeof publicCore.Cli, "function");
+assert.equal(typeof publicCore.GunsmithError, "function");
+assert.equal(typeof publicCore.isGunsmithError, "function");
 
-const publicTesting = await import("@andrei.fyi/picocli/testing");
+const publicTesting = await import("gunsmith/testing");
 assert.equal(typeof publicTesting.runCli, "function");
 assert.equal(typeof publicTesting.runJson, "function");
 
-const publicMcp = await import("@andrei.fyi/picocli/mcp");
+const publicMcp = await import("gunsmith/mcp");
 assert.equal(typeof publicMcp.listTools, "function");
 assert.equal(typeof publicMcp.invokeTool, "function");
 assert.equal(typeof publicMcp.buildServer, "function");
 
-const packageCjs = require("@andrei.fyi/picocli");
+const packageCjs = require("gunsmith");
 assert.equal(typeof packageCjs.create, "function");
 assert.equal(packageCjs.create, packageCjs.default.create);
 assert.equal(packageCjs.command, packageCjs.default.command);
 assert.equal(typeof packageCjs.default.create, "function");
 assert.equal(typeof packageCjs.Cli, "function");
+assert.equal(typeof packageCjs.GunsmithError, "function");
+assert.equal(typeof packageCjs.isGunsmithError, "function");
 
-const testingCjs = require("@andrei.fyi/picocli/testing");
+const testingCjs = require("gunsmith/testing");
 assert.equal(typeof testingCjs.runCli, "function");
 assert.equal(typeof testingCjs.runJson, "function");
 
-const mcpCjs = require("@andrei.fyi/picocli/mcp");
+const mcpCjs = require("gunsmith/mcp");
 assert.equal(typeof mcpCjs.listTools, "function");
 assert.equal(typeof mcpCjs.invokeTool, "function");
 assert.equal(typeof mcpCjs.buildServer, "function");
 
 // packaged --mcp lazy dynamic import and stdio
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "picocli-mcp-smoke-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gunsmith-mcp-smoke-"));
 const mcpCli = path.join(tmp, "cli.mjs");
 fs.writeFileSync(
   mcpCli,

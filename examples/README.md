@@ -1,4 +1,4 @@
-# picocli examples
+# Gunsmith examples
 
 Run examples with Bun from the repository root:
 

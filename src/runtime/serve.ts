@@ -1,7 +1,7 @@
 import type { Cli } from "../create";
 import type { CommandInvocationResult, ServeOptions } from "../types/execution";
 import { collectCommandEntries, getChildNames } from "../command/tree";
-import { getExitCodeForError, isPicocliError, PicocliError } from "../errors";
+import { getExitCodeForError, GunsmithError, isGunsmithError } from "../errors";
 import { renderError } from "../render/format";
 import { renderHelp, renderLlms } from "../render/help";
 import { createErrorResult } from "../render/result";
@@ -60,7 +60,7 @@ const writeJsonLine = (write: (value: string) => void, value: unknown) => {
   write(`${JSON.stringify(value)}\n`);
 };
 
-const writeFailure = (ctx: ServeContext, error: PicocliError) => {
+const writeFailure = (ctx: ServeContext, error: GunsmithError) => {
   if (ctx.parsedGlobals.isJSON) writeJsonLine(ctx.stdout, createErrorResult(error.code, error.message));
   else ctx.stderr(renderError(error.code, error.message, ctx.parsedGlobals.paint));
   return ctx.exit(getExitCodeForError(error.code));
@@ -105,7 +105,7 @@ const handleGlobalParseError = (ctx: ServeContext) => {
   if (parsedGlobals.tokens.missing.length > 0) {
     writeFailure(
       ctx,
-      new PicocliError(
+      new GunsmithError(
         "VALIDATION",
         `option "--${toKebabCase(parsedGlobals.tokens.missing[0]!)}" requires a value`,
       ),
@@ -119,7 +119,7 @@ const handleGlobalParseError = (ctx: ServeContext) => {
       const hint = sugg.length > 0 ? `; did you mean "${sugg[0]}"?` : "";
       writeFailure(
         ctx,
-        new PicocliError("VALIDATION", `invalid --format "${value}"; expected pretty or json${hint}`),
+        new GunsmithError("VALIDATION", `invalid --format "${value}"; expected pretty or json${hint}`),
       );
       return true;
     }
@@ -133,7 +133,7 @@ const handleSchemaManifestOrMcp = async (ctx: ServeContext) => {
     try {
       assertUniqueInputKeys(invocation.input, ["args", "options"]);
     } catch (error) {
-      if (isPicocliError(error)) writeFailure(ctx, error);
+      if (isGunsmithError(error)) writeFailure(ctx, error);
       else throw error;
       return true;
     }
@@ -173,7 +173,7 @@ const handleUnknownOption = (ctx: ServeContext) => {
   ];
   const sugg = bad.startsWith("--") ? suggest(bad.slice(2), known) : [];
   const hint = sugg.length > 0 ? `; did you mean "--${sugg[0]}"?` : "";
-  writeFailure(ctx, new PicocliError("VALIDATION", `unknown option "${bad}"${hint}`));
+  writeFailure(ctx, new GunsmithError("VALIDATION", `unknown option "${bad}"${hint}`));
   return true;
 };
 
@@ -184,7 +184,7 @@ const handleNonRunnableCommand = (ctx: ServeContext) => {
       const first = parsedGlobals.tokens.positionals[0]!;
       const sugg = suggest(first, getChildNames(invocation.node));
       const hint = sugg.length > 0 ? `; did you mean "${sugg[0]}"?` : "";
-      writeFailure(ctx, new PicocliError("COMMAND_NOT_FOUND", `unknown command "${first}"${hint}`));
+      writeFailure(ctx, new GunsmithError("COMMAND_NOT_FOUND", `unknown command "${first}"${hint}`));
       return true;
     }
     writeHelp(ctx);
@@ -216,7 +216,7 @@ const runCommandInvocation = async (ctx: ServeContext) => {
   if (commandInput.excessPositionals.length > 0) {
     return writeFailure(
       ctx,
-      new PicocliError("VALIDATION", `unexpected argument "${commandInput.excessPositionals[0]}"`),
+      new GunsmithError("VALIDATION", `unexpected argument "${commandInput.excessPositionals[0]}"`),
     );
   }
 

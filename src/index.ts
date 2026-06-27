@@ -1,5 +1,5 @@
 import cli, { Cli } from "./create";
-export { isPicocliError, PicocliError } from "./errors";
+export { GunsmithError, isGunsmithError } from "./errors";
 export type {
   AppDefinition,
   CliFeatures,

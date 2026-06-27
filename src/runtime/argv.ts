@@ -10,7 +10,7 @@ import {
   getCommandChildren,
   getEffectiveCommandDefinition,
 } from "../command/tree";
-import { PicocliError } from "../errors";
+import { GunsmithError } from "../errors";
 import { getActiveGlobalFlags } from "../flags/globals";
 import { buildFlagModel, getShouldConsumeFlagValue } from "../flags/model";
 import { tokenizeArgv } from "../flags/tokenizer";
@@ -19,7 +19,7 @@ import { buildInputModel } from "../schemas/input-model";
 
 export const resolveInvocation = (root: Cli, argv: string[]): CommandInvocation => {
   const treeIssue = findCommandTreeIssue(root);
-  if (treeIssue) throw new PicocliError("VALIDATION", treeIssue);
+  if (treeIssue) throw new GunsmithError("VALIDATION", treeIssue);
 
   const { node, commandPath, remainingArgv } = resolveCommandPath(root, argv, (flagToken, path) => {
     const def = getEffectiveCommandDefinition(getCommandChain(root, [...path]));

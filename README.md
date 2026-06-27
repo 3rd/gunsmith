@@ -1,11 +1,11 @@
-# picocli
+# Gunsmith
 
 Tiny CLI framework for Node and Bun.
 
 ```bash
-pnpm add @andrei.fyi/picocli zod
+pnpm add gunsmith zod
 # or
-bun add @andrei.fyi/picocli zod
+bun add gunsmith zod
 ```
 
 Requires Node.js ≥ 22 or Bun, and `zod@^4`.
@@ -15,7 +15,7 @@ Requires Node.js ≥ 22 or Bun, and `zod@^4`.
 Sample code:
 
 ```ts
-import cli from "@andrei.fyi/picocli";
+import cli from "gunsmith";
 import { z } from "zod";
 
 // create app
@@ -38,6 +38,7 @@ app.command("status", {
 const pr = cli.command("pr", {
   description: "Manage pull requests",
 });
+
 // create and add a subcommand
 pr.command("list", {
   alias: "ls", // alternate command name
@@ -295,7 +296,7 @@ input schemas include options, while env is read from the server environment.
 
 ## Output, color, exit codes
 
-Normal mode is human output. picocli does not print returned values unless structured output is
+Normal mode is human output. Gunsmith does not print returned values unless structured output is
 requested.
 
 | Behavior | Rule |
@@ -336,15 +337,15 @@ cli.create("internal", {
 names are joined with `_`. Input schemas come from args and options. Output schemas are generated
 from `outputSchema`.
 
-The MCP SDK is lazy-loaded through `@andrei.fyi/picocli/mcp`; install `@modelcontextprotocol/sdk` if you use
+The MCP SDK is lazy-loaded through `gunsmith/mcp`; install `@modelcontextprotocol/sdk` if you use
 `--mcp` or import that subpath.
 
 ## Testing
 
-`@andrei.fyi/picocli/testing` runs commands in-process.
+`gunsmith/testing` runs commands in-process.
 
 ```ts
-import { runCli, runJson } from "@andrei.fyi/picocli/testing";
+import { runCli, runJson } from "gunsmith/testing";
 
 const r = await runCli(app, ["Ada", "--loud"]);
 expect(r.stdout).toBe("HELLO ADA\n");

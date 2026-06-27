@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { PicocliError } from "../errors";
+import { GunsmithError } from "../errors";
 
 const parseSchema = <S extends z.ZodObject<z.ZodRawShape>>(
   schema: S,
@@ -17,7 +17,7 @@ const parseSchema = <S extends z.ZodObject<z.ZodRawShape>>(
   const hint =
     coercible ? ` (CLI values arrive as strings — use z.coerce.${expected}() for non-string ${kind}s)` : "";
   const message = `invalid ${kind} "${field}": ${issue.message}${hint}`;
-  throw new PicocliError("VALIDATION", message);
+  throw new GunsmithError("VALIDATION", message);
 };
 
 export const parseOutputSchema = <S extends z.ZodType>(schema: S, data: unknown): z.infer<S> => {
@@ -27,7 +27,7 @@ export const parseOutputSchema = <S extends z.ZodType>(schema: S, data: unknown)
   const issue = (result.error.issues[0] ?? {}) as z.ZodIssue;
   const field = issue.path?.join(".") || "(output)";
   const message = `invalid output "${field}": ${issue.message}`;
-  throw new PicocliError("VALIDATION", message);
+  throw new GunsmithError("VALIDATION", message);
 };
 
 export const validateAll = (params: {

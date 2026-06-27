@@ -1,4 +1,4 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: {
@@ -10,14 +10,12 @@ export default defineConfig({
   dts: true,
   clean: true,
   outDir: "dist",
-  outExtension({ format }) {
-    return { js: format === "cjs" ? ".cjs" : ".js" };
-  },
   platform: "node",
   target: "node22",
   treeshake: true,
-  splitting: false,
   sourcemap: false,
   shims: false,
-  external: ["zod", "@modelcontextprotocol/sdk"],
+  fixedExtension: false,
+  outputOptions: { exports: "named" },
+  deps: { neverBundle: ["zod", "@modelcontextprotocol/sdk"] },
 });

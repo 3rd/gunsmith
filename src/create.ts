@@ -10,7 +10,7 @@ import type {
 } from "./types/commands";
 import type { ServeOptions } from "./types/execution";
 import { clearCommandTreeIssueCache, getCommandChildren, setCommandChild } from "./command/tree";
-import { PicocliError } from "./errors";
+import { GunsmithError } from "./errors";
 import { serve } from "./runtime/serve";
 
 type CliKind = "app" | "command";
@@ -88,15 +88,15 @@ export class Cli<
   ): this {
     const name = typeof a === "string" ? a : a.name;
     if (getCommandChildren(this).has(name)) {
-      throw new PicocliError("VALIDATION", `command "${name}" already exists under "${this.name}"`);
+      throw new GunsmithError("VALIDATION", `command "${name}" already exists under "${this.name}"`);
     }
     if (typeof a === "string") setCommandChild(this, name, { name, def: b ?? {} });
     else {
       if (!commandCliSet.has(a)) {
-        throw new PicocliError("VALIDATION", `command "${name}" must be created with cli.command(...)`);
+        throw new GunsmithError("VALIDATION", `command "${name}" must be created with cli.command(...)`);
       }
       if (containsCommandNode(a, this)) {
-        throw new PicocliError("VALIDATION", `command "${name}" cannot be mounted into its own tree`);
+        throw new GunsmithError("VALIDATION", `command "${name}" cannot be mounted into its own tree`);
       }
       const parents = parentCliMap.get(a) ?? new Set<AnyCli>();
       parents.add(this);

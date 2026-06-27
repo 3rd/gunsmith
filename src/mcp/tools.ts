@@ -3,7 +3,7 @@ import type { AnyCommandDefinition, CommandNode } from "../types/commands";
 import type { McpRuntimeOptions, McpToolDefinition, McpToolResult } from "../types/mcp";
 import type { CommandResult } from "../types/result";
 import { collectCommandEntries, findCommandTreeIssue } from "../command/tree";
-import { isPicocliError, PicocliError } from "../errors";
+import { GunsmithError, isGunsmithError } from "../errors";
 import { createErrorResult } from "../render/result";
 import { invokeCommand } from "../runtime/invoke";
 import {
@@ -125,7 +125,7 @@ const invokeToolCommand = async <T>(
 
   assertUniqueInputKeys(model, ["args", "options"]);
   if (namedInput.unknownKey) {
-    throw new PicocliError("VALIDATION", `unknown tool argument "${namedInput.unknownKey}"`);
+    throw new GunsmithError("VALIDATION", `unknown tool argument "${namedInput.unknownKey}"`);
   }
 
   const result = await invokeCommand({
@@ -156,8 +156,8 @@ export const invokeToolEntry = async <T>(
   try {
     return createToolResult(await invokeToolCommand<T>(root, entry, rawArgs, opts));
   } catch (error) {
-    const message = isPicocliError(error) ? error.message : ((error as Error).message ?? String(error));
-    const code = isPicocliError(error) ? error.code : "UNKNOWN";
+    const message = isGunsmithError(error) ? error.message : ((error as Error).message ?? String(error));
+    const code = isGunsmithError(error) ? error.code : "UNKNOWN";
     return createToolErrorResult(code, message);
   }
 };

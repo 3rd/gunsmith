@@ -1,7 +1,7 @@
 import type { AnyCommandDefinition } from "../types/commands";
 import type { CommandInputValues, CommandInvocationResult, CommandRunResult } from "../types/execution";
 import type { InputModel } from "../types/input";
-import { getExitCodeForError, isPicocliError, type PicocliError } from "../errors";
+import { getExitCodeForError, type GunsmithError, isGunsmithError } from "../errors";
 import { createErrorResult, createSuccessResult } from "../render/result";
 import { validateAll } from "../schemas/validate";
 import { runCommand } from "./run";
@@ -25,7 +25,7 @@ type ValidatedCommandInput = ReturnType<typeof validateAll>;
 const validateCommandInput = (
   input: InputModel,
   values: CommandInputValues,
-): PicocliError | ValidatedCommandInput => {
+): GunsmithError | ValidatedCommandInput => {
   try {
     return validateAll({
       args: input.args,
@@ -36,12 +36,12 @@ const validateCommandInput = (
       envInput: values.envInput,
     });
   } catch (error) {
-    if (!isPicocliError(error)) throw error;
+    if (!isGunsmithError(error)) throw error;
     return error;
   }
 };
 
-const createValidationResult = (error: PicocliError): CommandInvocationResult => ({
+const createValidationResult = (error: GunsmithError): CommandInvocationResult => ({
   ok: false,
   result: createErrorResult(error.code, error.message),
   error: { code: error.code, message: error.message },
@@ -70,7 +70,7 @@ export const invokeCommand = async (params: InvokeCommandParams): Promise<Comman
     params;
   const parsed = validateCommandInput(input, inputs);
 
-  if (isPicocliError(parsed)) return createValidationResult(parsed);
+  if (isGunsmithError(parsed)) return createValidationResult(parsed);
 
   const result = await runCommand(
     def,

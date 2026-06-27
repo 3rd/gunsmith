@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { AnyCommandDefinition } from "../types/commands";
 import type { InputModel, InputPart } from "../types/input";
-import { PicocliError } from "../errors";
+import { GunsmithError } from "../errors";
 import { getDuplicateKeyMessage, getDuplicateKeys, mergeObjects, toJsonSchema } from "./object";
 import { getShapeKeys } from "./zod";
 
@@ -22,7 +22,7 @@ const getInputSchemas = (model: InputModel, parts: readonly InputPart[]) => {
 
 export const assertUniqueInputKeys = (model: InputModel, parts: readonly InputPart[]) => {
   const conflicts = getDuplicateKeys(getInputSchemas(model, parts));
-  if (conflicts.length > 0) throw new PicocliError("VALIDATION", getDuplicateKeyMessage(conflicts));
+  if (conflicts.length > 0) throw new GunsmithError("VALIDATION", getDuplicateKeyMessage(conflicts));
 };
 
 export const getInputJsonSchema = (
