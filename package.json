@@ -1,6 +1,6 @@
 {
   "name": "gunsmith",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tiny CLI framework for Node and Bun.",
   "keywords": [
     "cli",
@@ -26,6 +26,7 @@
     "url": "git+https://github.com/3rd/gunsmith.git"
   },
   "author": "3rd",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -33,7 +34,8 @@
   "sideEffects": false,
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "NOTICE"
   ],
   "publishConfig": {
     "access": "public"
