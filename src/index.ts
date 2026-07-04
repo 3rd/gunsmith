@@ -4,6 +4,7 @@ export type {
   AppDefinition,
   CliFeatures,
   CommandDefinition,
+  CommandFeatures,
   Context,
   OutputValidationMode,
 } from "./types/commands";

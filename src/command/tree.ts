@@ -1,14 +1,41 @@
-import type { AnyCommandDefinition, CommandChildMatch, CommandEntry, CommandNode } from "../types/commands";
+import type {
+  AnyCommandDefinition,
+  CommandChildMatch,
+  CommandEntry,
+  CommandFeatures,
+  CommandNode,
+} from "../types/commands";
 import { isLongFlagToken } from "../flags/tokenizer";
 import { mergeObjects } from "../schemas/object";
+import { getAlias, getField, getShapeKeys } from "../schemas/zod";
 
-const isValidCommandName = (name: string) => name.length > 0 && !isLongFlagToken(name) && name !== "--";
+const isValidCommandName = (name: string) =>
+  name.length > 0 && !isLongFlagToken(name) && name !== "--" && name !== "__complete";
+const OPTION_ALIAS_PATTERN = /^[A-Za-z]$/;
+
+const findOptionAliasIssue = (node: CommandNode): string | undefined => {
+  const seen = new Map<string, string>();
+  for (const key of getShapeKeys(node.def.options)) {
+    const alias = getAlias(getField(node.def.options, key));
+    if (alias === undefined) continue;
+    if (!OPTION_ALIAS_PATTERN.test(alias)) {
+      return `invalid alias "${alias}" for option "${key}" of "${node.name}"; aliases must be a single letter`;
+    }
+    const existing = seen.get(alias);
+    if (existing) return `alias "${alias}" for option "${key}" of "${node.name}" conflicts with option "${existing}"`;
+    seen.set(alias, key);
+  }
+  return undefined;
+};
 const commandTreeIssueCache = new WeakMap<CommandNode, string | undefined>();
 const commandChildrenMap = new WeakMap<CommandNode, Map<string, CommandNode>>();
 const emptyCommandChildren: ReadonlyMap<string, CommandNode> = new Map();
 
 export const getCommandAliases = (def: AnyCommandDefinition) =>
   typeof def.alias === "string" ? [def.alias] : (def.alias ?? []);
+
+export const isCommandSurfaceDisabled = (chain: readonly CommandNode[], surface: keyof CommandFeatures) =>
+  chain.some((node) => node.def.features?.[surface] === false);
 
 export const clearCommandTreeIssueCache = (root: CommandNode) => {
   commandTreeIssueCache.delete(root);
@@ -35,6 +62,8 @@ export const findCommandTreeIssue = (root: CommandNode) => {
   if (commandTreeIssueCache.has(root)) return commandTreeIssueCache.get(root);
 
   const walk = (node: CommandNode): string | undefined => {
+    const optionAliasIssue = findOptionAliasIssue(node);
+    if (optionAliasIssue) return optionAliasIssue;
     const owner = node.name;
     const seen = new Map<string, string>();
     const children = getCommandChildren(node);

@@ -55,6 +55,28 @@ export const getDescription = (s: z.ZodType | undefined) => {
   return meta?.description;
 };
 
+export const getAlias = (s: z.ZodType | undefined) => {
+  const meta = (s as { meta?: () => { alias?: unknown } | undefined })?.meta?.();
+  return typeof meta?.alias === "string" ? meta.alias : undefined;
+};
+
+export const getEnumValues = (s: z.ZodType | undefined): string[] | undefined => {
+  let cur: unknown = s;
+  for (let i = 0; i < 12; i++) {
+    const def = (
+      cur as { _zod?: { def?: { type?: string; innerType?: unknown; entries?: Record<string, unknown> } } }
+    )?._zod?.def;
+    if (!def?.type) return undefined;
+    if (WRAPPERS.has(def.type)) {
+      cur = def.innerType;
+      continue;
+    }
+    if (def.type !== "enum" || !def.entries) return undefined;
+    return Object.values(def.entries).filter((value): value is string => typeof value === "string");
+  }
+  return undefined;
+};
+
 export const getShapeKeys = (obj: z.ZodObject<z.ZodRawShape> | undefined) => {
   return Object.keys(getShape(obj) ?? {});
 };

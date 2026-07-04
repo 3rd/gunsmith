@@ -23,6 +23,9 @@ const resolveCliFeatures = (features?: CliFeatures): Required<CliFeatures> => ({
   mcp: features?.mcp ?? true,
   schema: features?.schema ?? true,
   llms: features?.llms ?? true,
+  json: features?.json ?? true,
+  color: features?.color ?? true,
+  completions: features?.completions ?? true,
 });
 
 const clearCachedTreeIssues = (cli: AnyCli): void => {
@@ -57,8 +60,8 @@ export class Cli<
 
   constructor(name: string, def?: AnyCommandDefinition, features?: CliFeatures) {
     this.name = name;
-    this.def = def ?? {};
-    this.features = resolveCliFeatures(features);
+    this.def = features ? { ...(def ?? {}), features } : (def ?? {});
+    this.features = resolveCliFeatures(features ?? def?.features);
   }
 
   command<
@@ -128,11 +131,10 @@ const cli = {
       OutputSchema
     >,
   ): Cli<OptionsSchema, EnvSchema, "app"> => {
-    const { features, ...commandDefinition } = def ?? {};
     return new Cli<OptionsSchema, EnvSchema, "app">(
       name,
-      commandDefinition as AnyCommandDefinition | undefined,
-      features,
+      def as AnyCommandDefinition | undefined,
+      def?.features,
     );
   },
   command: <

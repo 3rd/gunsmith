@@ -12,7 +12,7 @@ import {
 } from "../command/tree";
 import { GunsmithError } from "../errors";
 import { getActiveGlobalFlags } from "../flags/globals";
-import { buildFlagModel, getShouldConsumeFlagValue } from "../flags/model";
+import { buildFlagModel, getFlagTokenRole } from "../flags/model";
 import { tokenizeArgv } from "../flags/tokenizer";
 import { getShouldUseAnsi, makePaint } from "../render/color";
 import { buildInputModel } from "../schemas/input-model";
@@ -23,7 +23,7 @@ export const resolveInvocation = (root: Cli, argv: string[]): CommandInvocation 
 
   const { node, commandPath, remainingArgv } = resolveCommandPath(root, argv, (flagToken, path) => {
     const def = getEffectiveCommandDefinition(getCommandChain(root, [...path]));
-    return getShouldConsumeFlagValue(def.options)(flagToken);
+    return getFlagTokenRole(def.options)(flagToken);
   });
   const chain = getCommandChain(root, commandPath);
   const def = getEffectiveCommandDefinition(chain);

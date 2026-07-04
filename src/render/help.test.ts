@@ -73,9 +73,47 @@ describe("--help rendering", () => {
     const r = await runCli(createDemoCli(), ["--help"], noColor);
     expect(r.stdout).toContain("greet (hi)");
   });
+
+  test("option aliases render as -x, --long", async () => {
+    const a = cli.create("x", {
+      options: z.object({ yes: z.boolean().default(false).meta({ alias: "y", description: "confirm" }) }),
+      run: () => {},
+    });
+    const r = await runCli(a, ["--help"], noColor);
+    expect(r.stdout).toContain("-y, --yes  confirm");
+  });
+
+  test("the built-in help global renders its -h alias", async () => {
+    const r = await runCli(createDemoCli(), ["--help"], noColor);
+    expect(r.stdout).toContain("-h, --help  show help");
+  });
+
+  test("a shadowed built-in -h alias is only advertised on its effective owner", async () => {
+    const a = cli.create("x", {
+      options: z.object({
+        host: z.string().default("localhost").meta({ alias: "h", description: "host to use" }),
+      }),
+      run: () => {},
+    });
+    const r = await runCli(a, ["--help"], noColor);
+    expect(r.stdout).toContain("-h, --host");
+    expect(r.stdout).not.toContain("-h, --help");
+    expect(r.stdout).toContain("--help  show help");
+  });
 });
 
 describe("--llms manifest", () => {
+  test("features.llms=false omits a command from the manifest but not from help", async () => {
+    const a = cli.create("app", { version: "1.0.0" });
+    a.command("build", { description: "build it", run: () => {} });
+    a.command("purge", { description: "danger", features: { llms: false }, run: () => {} });
+    const manifest = await runCli(a, ["--llms"]);
+    expect(manifest.stdout).toContain("## app build");
+    expect(manifest.stdout).not.toContain("purge");
+    const help = await runCli(a, ["--help"], noColor);
+    expect(help.stdout).toContain("purge  danger");
+  });
+
   test("lists non-hidden commands with typed fields", async () => {
     const r = await runCli(createDemoCli(), ["--llms"]);
     expect(r.stdout).toContain("# demo");

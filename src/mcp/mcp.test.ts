@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import cli from "../index";
+import cli, { Cli } from "../index";
 import { invokeTool, listTools } from "./index";
 
 const createDemoCli = () => {
@@ -38,6 +38,33 @@ describe("listTools", () => {
     const hidden = cli.command("internal", { hidden: true });
     hidden.command("run", { run: () => ({ ok: true }) });
     root.command(hidden);
+    expect(listTools(root)).toEqual([]);
+  });
+
+  test("features.mcp=false excludes a command from tools but not from the CLI tree", () => {
+    const root = cli.create("app");
+    root.command("build", { run: () => ({ ok: true }) });
+    root.command("purge", { features: { mcp: false }, run: () => ({ purged: true }) });
+    expect(listTools(root).map((t) => t.name)).toEqual(["build"]);
+  });
+
+  test("root features.mcp=false removes every tool, including from programmatic listing", () => {
+    const root = cli.create("app", { features: { mcp: false } });
+    root.command("build", { run: () => ({ ok: true }) });
+    expect(listTools(root)).toEqual([]);
+  });
+
+  test("a Cli constructed with a separate features argument filters tools from that argument", () => {
+    const root = new Cli("app", {}, { mcp: false });
+    root.command("build", { run: () => ({ ok: true }) });
+    expect(listTools(root)).toEqual([]);
+  });
+
+  test("features.mcp=false on a parent excludes its descendants", () => {
+    const root = cli.create("app");
+    const internal = cli.command("internal", { features: { mcp: false } });
+    internal.command("run", { run: () => ({ ok: true }) });
+    root.command(internal);
     expect(listTools(root)).toEqual([]);
   });
 
@@ -185,6 +212,19 @@ describe("invokeTool", () => {
       structuredContent: {
         ok: false,
         error: { code: "COMMAND_NOT_FOUND", message: "unknown tool: missing" },
+      },
+    });
+  });
+
+  test("a features.mcp=false command cannot be invoked as a tool", async () => {
+    const root = cli.create("app");
+    root.command("purge", { features: { mcp: false }, run: () => ({ purged: true }) });
+    const res = await invokeTool(root, "purge", {});
+    expect(res).toMatchObject({
+      isError: true,
+      structuredContent: {
+        ok: false,
+        error: { code: "COMMAND_NOT_FOUND", message: "unknown tool: purge" },
       },
     });
   });

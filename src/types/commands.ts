@@ -41,6 +41,11 @@ export type ChildContext<
   Merge<ContextValue<ParentEnvSchema>, ContextValue<EnvSchema>>
 >;
 
+export interface CommandFeatures {
+  mcp?: boolean;
+  llms?: boolean;
+}
+
 export interface CommandDefinition<
   ArgsSchema extends z.ZodObject<z.ZodRawShape> | undefined = undefined,
   OptionsSchema extends z.ZodObject<z.ZodRawShape> | undefined = undefined,
@@ -58,13 +63,16 @@ export interface CommandDefinition<
   examples?: { command: string; description?: string }[];
   version?: string;
   hidden?: boolean;
+  features?: CommandFeatures;
+  help?: string | ((generatedHelp: string) => string);
   run?: (context: HandlerContext) => CommandRunReturn<OutputSchema>;
 }
 
-export interface CliFeatures {
-  mcp?: boolean;
+export interface CliFeatures extends CommandFeatures {
   schema?: boolean;
-  llms?: boolean;
+  json?: boolean;
+  color?: boolean;
+  completions?: boolean;
 }
 
 export type AppDefinition<
@@ -75,7 +83,7 @@ export type AppDefinition<
   OutputSchema extends z.ZodType | undefined = undefined,
 > = Omit<
   CommandDefinition<ArgsSchema, OptionsSchema, EnvSchema, HandlerContext, OutputSchema>,
-  "alias" | "hidden"
+  "alias" | "features" | "hidden"
 > & {
   features?: CliFeatures;
 };

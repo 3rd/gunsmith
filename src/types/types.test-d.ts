@@ -38,8 +38,7 @@ cli.create("feature-flags", {
 });
 
 command("feature-flags-command", {
-  // @ts-expect-error features belong in cli.create
-  features: { mcp: false },
+  features: { mcp: false, llms: false },
 });
 
 // outputSchema types returned structured data

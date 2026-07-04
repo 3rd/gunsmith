@@ -10,6 +10,13 @@ import { assertUniqueInputKeys, getInputJsonSchema } from "../schemas/input-mode
 import { toJsonSchema } from "../schemas/object";
 import { toKebabCase } from "../schemas/zod";
 import { parseGlobals, resolveInvocation } from "./argv";
+import {
+  COMPLETION_SHELLS,
+  getCompletionCandidates,
+  isCompletionSafeBinName,
+  isCompletionShell,
+  renderCompletionScript,
+} from "./completions";
 import { parseCommandInput } from "./input";
 import { invokeCommand } from "./invoke";
 
@@ -75,15 +82,16 @@ const finishCommand = (ctx: ServeContext, result: CommandInvocationResult) => {
 };
 
 const writeHelp = (ctx: ServeContext) => {
-  ctx.stdout(
-    renderHelp(
-      ctx.invocation.helpNode,
-      ctx.invocation.commandPath,
-      ctx.root.name,
-      ctx.parsedGlobals.paint,
-      ctx.parsedGlobals.globals,
-    ),
+  const generated = renderHelp(
+    ctx.invocation.helpNode,
+    ctx.invocation.commandPath,
+    ctx.root.name,
+    ctx.parsedGlobals.paint,
+    ctx.parsedGlobals.globals,
   );
+  const custom = ctx.invocation.def.help;
+  const helpText = typeof custom === "function" ? custom(generated) : (custom ?? generated);
+  ctx.stdout(helpText.endsWith("\n") ? helpText : `${helpText}\n`);
 };
 
 const handleHelpOrVersion = async (ctx: ServeContext) => {
@@ -125,6 +133,34 @@ const handleGlobalParseError = (ctx: ServeContext) => {
     }
   }
   return false;
+};
+
+const handleCompletionsScript = (ctx: ServeContext) => {
+  const { parsedGlobals } = ctx;
+  if (!parsedGlobals.has("completions")) return false;
+  const value = parsedGlobals.lastValue("completions");
+  if (!isCompletionShell(value)) {
+    const sugg = suggest(String(value), [...COMPLETION_SHELLS]);
+    const hint = sugg.length > 0 ? `; did you mean "${sugg[0]}"?` : "";
+    writeFailure(
+      ctx,
+      new GunsmithError("VALIDATION", `invalid --completions "${value}"; expected bash, zsh, or fish${hint}`),
+    );
+    return true;
+  }
+  if (!isCompletionSafeBinName(ctx.root.name)) {
+    writeFailure(
+      ctx,
+      new GunsmithError(
+        "VALIDATION",
+        `completions are not available for binary name "${ctx.root.name}"; expected letters, digits, ".", "_", "+", or "-"`,
+      ),
+    );
+    return true;
+  }
+  ctx.stdout(renderCompletionScript(ctx.root.name, value));
+  ctx.exit(0);
+  return true;
 };
 
 const handleSchemaManifestOrMcp = async (ctx: ServeContext) => {
@@ -242,9 +278,22 @@ const runCommandInvocation = async (ctx: ServeContext) => {
 };
 
 export const serve = async (root: Cli, argv: string[], opts: ServeOptions) => {
+  if (root.features.completions && argv[0] === "__complete") {
+    const stdout = opts.stdout ?? ((s: string) => void process.stdout.write(s));
+    const exit = opts.exit ?? ((c: number) => process.exit(c));
+    let candidates: string[] = [];
+    try {
+      candidates = getCompletionCandidates(root, argv.slice(1));
+    } catch {
+      // completion must never break the shell; fall through with no candidates
+    }
+    if (candidates.length > 0) stdout(`${candidates.join("\n")}\n`);
+    return exit(0);
+  }
   const ctx = createServeContext(root, argv, opts);
   if (await handleHelpOrVersion(ctx)) return;
   if (handleGlobalParseError(ctx)) return;
+  if (handleCompletionsScript(ctx)) return;
   if (await handleSchemaManifestOrMcp(ctx)) return;
   if (handleUnknownOption(ctx)) return;
   if (handleNonRunnableCommand(ctx)) return;

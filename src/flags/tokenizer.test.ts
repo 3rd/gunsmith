@@ -5,6 +5,7 @@ import { tokenizeArgv } from "./tokenizer";
 const model: FlagModel = {
   long: (raw) =>
     ({ loud: "loud", "save-dev": "saveDev", saveDev: "saveDev", port: "port", tags: "tags" })[raw],
+  short: (alias) => ({ l: "loud", p: "port" })[alias],
   negatable: (no) => {
     if (no === "no-loud") return "loud";
     if (no === "no-save-dev") return "saveDev";
@@ -52,5 +53,22 @@ describe("tokenizeArgv", () => {
     const r = tokenizeArgv(["--nope", "-z"], model);
     expect(r.positionals).toEqual(["-z"]);
     expect(r.unknown).toEqual(["--nope"]);
+  });
+  test("short alias for a boolean option", () => {
+    expect(getTokenizedFlags(["-l"])).toEqual({ loud: [true] });
+  });
+  test("short alias for a value option: spaced and inline", () => {
+    expect(getTokenizedFlags(["-p", "3000"])).toEqual({ port: ["3000"] });
+    expect(getTokenizedFlags(["-p=8080"])).toEqual({ port: ["8080"] });
+  });
+  test("short alias missing its value is reported", () => {
+    const r = tokenizeArgv(["-p"], model);
+    expect(r.missing).toEqual(["port"]);
+  });
+  test("unaliased and multi-letter single-dash tokens stay positionals", () => {
+    const r = tokenizeArgv(["-z", "-zz", "-l2"], model);
+    expect(r.positionals).toEqual(["-z", "-zz", "-l2"]);
+    expect(r.unknown).toEqual([]);
+    expect(Object.fromEntries(r.flags)).toEqual({});
   });
 });

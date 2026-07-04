@@ -2,9 +2,11 @@ import type { z } from "zod";
 import type { CommandEntry, CommandNode } from "../types/commands";
 import type { GlobalFlag } from "../types/flags";
 import type { makePaint } from "./color";
-import { getCommandAliases, getCommandChildren } from "../command/tree";
+import { getCommandAliases, getCommandChildren, isCommandSurfaceDisabled } from "../command/tree";
 import { GLOBAL_FLAGS } from "../flags/globals";
+import { getEffectiveAliasOwners } from "../flags/model";
 import {
+  getAlias,
   getBaseType,
   getDescription,
   getField,
@@ -30,11 +32,14 @@ const getArgumentUsage = (args: z.ZodObject<z.ZodRawShape> | undefined) => {
 const getOptionLines = (
   options: z.ZodObject<z.ZodRawShape> | undefined,
   paint: ReturnType<typeof makePaint>,
+  aliasOwners: Map<string, string>,
 ) => {
   return getShapeKeys(options).map((k) => {
     const f = getField(options, k);
     const optionName = `--${toKebabCase(k)}`;
-    const names = `    ${paint(optionName, "yellow")}`;
+    const rawAlias = getAlias(f);
+    const alias = rawAlias !== undefined && aliasOwners.get(rawAlias) === `option:${k}` ? rawAlias : undefined;
+    const names = alias ? paint(`-${alias}, ${optionName}`, "yellow") : `    ${paint(optionName, "yellow")}`;
     const type = getBaseType(f) ?? "string";
     const valueLabel = `<${type}>`;
     const value = isBooleanOption(f) ? "" : ` ${paint(valueLabel, "gray")}`;
@@ -73,11 +78,16 @@ const pushArgumentLines = (lines: string[], node: CommandNode, paint: ReturnType
   }
 };
 
-const pushOptionLines = (lines: string[], node: CommandNode, paint: ReturnType<typeof makePaint>) => {
+const pushOptionLines = (
+  lines: string[],
+  node: CommandNode,
+  paint: ReturnType<typeof makePaint>,
+  aliasOwners: Map<string, string>,
+) => {
   if (!node.def.options || getShapeKeys(node.def.options).length === 0) return;
 
   lines.push("", paint("Options:", "bold"));
-  lines.push(...getOptionLines(node.def.options, paint));
+  lines.push(...getOptionLines(node.def.options, paint, aliasOwners));
 };
 
 const pushCommandLines = (lines: string[], node: CommandNode, paint: ReturnType<typeof makePaint>) => {
@@ -104,10 +114,12 @@ const pushExampleLines = (lines: string[], node: CommandNode, paint: ReturnType<
   }
 };
 
-const getGlobalLabel = (g: GlobalFlag) => {
+const getGlobalLabel = (g: GlobalFlag, aliasOwners: Map<string, string>) => {
   if (g.name === "color") return "--color / --no-color";
   const value = g.bool ? "" : " <value>";
-  return `--${toKebabCase(g.name)}${value}`;
+  const long = `--${toKebabCase(g.name)}${value}`;
+  const owned = g.alias !== undefined && aliasOwners.get(g.alias) === `global:${g.name}`;
+  return owned ? `-${g.alias}, ${long}` : long;
 };
 
 export const renderHelp = (
@@ -118,15 +130,16 @@ export const renderHelp = (
   globals: readonly GlobalFlag[] = GLOBAL_FLAGS,
 ) => {
   const lines: string[] = [getUsageLine(node, commandPath, binName, paint)];
+  const aliasOwners = getEffectiveAliasOwners(node.def.options, globals);
 
   if (node.def.description) lines.push("", node.def.description);
   pushArgumentLines(lines, node, paint);
-  pushOptionLines(lines, node, paint);
+  pushOptionLines(lines, node, paint, aliasOwners);
   pushCommandLines(lines, node, paint);
   pushExampleLines(lines, node, paint);
 
   lines.push("", paint("Global options:", "bold"));
-  for (const g of globals) lines.push(`  ${paint(getGlobalLabel(g), "yellow")}  ${g.description}`);
+  for (const g of globals) lines.push(`  ${paint(getGlobalLabel(g, aliasOwners), "yellow")}  ${g.description}`);
 
   return `${lines.join("\n")}\n`;
 };
@@ -151,6 +164,7 @@ export const renderLlms = (binName: string, entries: CommandEntry[]) => {
   const lines = [`# ${binName}`, ""];
   for (const e of entries) {
     if (e.def.hidden) continue;
+    if (isCommandSurfaceDisabled(e.chain, "llms")) continue;
     const name = [binName, ...e.commandPath].join(" ");
     lines.push(`## ${name}`);
     if (e.def.description) lines.push(e.def.description);

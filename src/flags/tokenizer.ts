@@ -101,6 +101,32 @@ const readLongFlagToken = (
   return index;
 };
 
+const SHORT_ALIAS_TOKEN = /^-[A-Za-z](?:=|$)/;
+
+export const isShortAliasToken = (token: string) => SHORT_ALIAS_TOKEN.test(token);
+
+const parseShortFlagToken = (token: string) => {
+  const body = token.slice(1);
+  const eq = body.indexOf("=");
+  return {
+    alias: eq === -1 ? body : body.slice(0, eq),
+    inlineValue: eq === -1 ? undefined : body.slice(eq + 1),
+  };
+};
+
+const readShortFlagToken = (
+  token: string,
+  argv: string[],
+  index: number,
+  model: FlagModel,
+  state: ArgvTokenizationState,
+): number | undefined => {
+  const { alias, inlineValue } = parseShortFlagToken(token);
+  const name = model.short(alias);
+  if (!name) return undefined;
+  return readKnownLongFlag({ name, isBoolean: model.isBoolean(name) }, inlineValue, argv, index, state);
+};
+
 export const tokenizeArgv = (argv: string[], model: FlagModel): TokenizedArgv => {
   const flags = new Map<string, (boolean | string)[]>();
   const state: ArgvTokenizationState = {
@@ -128,6 +154,14 @@ export const tokenizeArgv = (argv: string[], model: FlagModel): TokenizedArgv =>
     if (tok.startsWith("--")) {
       i = readLongFlagToken(tok, argv, i, model, state);
       continue;
+    }
+
+    if (isShortAliasToken(tok)) {
+      const nextIndex = readShortFlagToken(tok, argv, i, model, state);
+      if (nextIndex !== undefined) {
+        i = nextIndex;
+        continue;
+      }
     }
 
     state.positionals.push(tok);

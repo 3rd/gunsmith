@@ -2,7 +2,7 @@ import type { Cli } from "../create";
 import type { AnyCommandDefinition, CommandNode } from "../types/commands";
 import type { McpRuntimeOptions, McpToolDefinition, McpToolResult } from "../types/mcp";
 import type { CommandResult } from "../types/result";
-import { collectCommandEntries, findCommandTreeIssue } from "../command/tree";
+import { collectCommandEntries, findCommandTreeIssue, isCommandSurfaceDisabled } from "../command/tree";
 import { GunsmithError, isGunsmithError } from "../errors";
 import { createErrorResult } from "../render/result";
 import { invokeCommand } from "../runtime/invoke";
@@ -90,6 +90,7 @@ export const getToolEntries = (root: CommandNode): ToolEntry[] => {
   const names = new Set<string>();
   for (const entry of collectCommandEntries(root)) {
     if (!entry.node.def.run) continue;
+    if (isCommandSurfaceDisabled(entry.chain, "mcp")) continue;
     const name = entry.commandPath.length > 0 ? entry.commandPath.join("_") : root.name;
     if (names.has(name)) throw new Error(`duplicate MCP tool name: ${name}`);
     names.add(name);

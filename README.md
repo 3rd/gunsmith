@@ -85,7 +85,7 @@ Commands:
   pr  Manage pull requests
 
 Global options:
-  --help  show help
+  -h, --help  show help
   --version  print version
   --json  emit JSON output
   --format <value>  output format: pretty | json
@@ -93,6 +93,7 @@ Global options:
   --mcp  run as an MCP stdio server
   --llms  print a Markdown command manifest
   --schema  print input/output JSON Schemas for the command
+  --completions <value>  print a shell completion script: bash | zsh | fish
 
 $ gh status
 clean (branch: main)
@@ -106,7 +107,7 @@ Commands:
   list (ls)  List pull requests
 
 Global options:
-  --help  show help
+  -h, --help  show help
   --version  print version
   --json  emit JSON output
   --format <value>  output format: pretty | json
@@ -114,6 +115,7 @@ Global options:
   --mcp  run as an MCP stdio server
   --llms  print a Markdown command manifest
   --schema  print input/output JSON Schemas for the command
+  --completions <value>  print a shell completion script: bash | zsh | fish
 
 $ gh pr list acme/widgets --state closed
 #1 Fix CI in acme/widgets
@@ -151,11 +153,12 @@ Common definition fields:
 | ---- | ---- |
 | `description` | Help text; MCP tool description for runnable commands |
 | `args` | Positional arguments, assigned by schema key order |
-| `options` | Named `--flags`; booleans support `--flag` and `--no-flag` |
+| `options` | Named `--flags`; booleans support `--flag` and `--no-flag`; `.meta({ alias: "x" })` adds a `-x` short alias |
 | `env` | Environment variables read by exact key name |
 | `outputSchema` | Describes successful structured data and MCP output schema |
 | `validateOutput` | Validate returned data against `outputSchema`; defaults to `"development"` |
 | `examples` | Help examples |
+| `help` | Replace generated help: a string, or `(generatedHelp) => string` to wrap it |
 | `run` | Command handler |
 | `version` | Value printed by `--version` |
 
@@ -171,6 +174,7 @@ Child command fields:
 | ---- | ---- |
 | `alias` | Alternate command name |
 | `hidden` | Hide from help and MCP |
+| `features` | Per-command surface exposure: `{ mcp, llms }`; `false` removes this command and its subtree from that surface |
 
 `run()` owns normal output. Print to stdout, start a TUI, call APIs, or return nothing.
 
@@ -211,6 +215,23 @@ options: z.object({
   when: z.coerce.date().optional(),
 })
 ```
+
+### Option aliases
+
+Give an option a single-letter alias with `.meta({ alias })`:
+
+```ts
+options: z.object({
+  yes: z.boolean().default(false).meta({ alias: "y", description: "skip confirmation" }),
+})
+```
+
+`-y` then parses exactly like `--yes` (including `-y=false` and spaced values for non-booleans),
+and help renders `-y, --yes`. The built-in `--help` global has the `-h` alias; an option alias
+with the same letter overrides it. Aliases must be a single letter and unique within a command.
+Across levels, aliases shadow like options do: the nearest definition wins, so a subcommand's
+alias overrides an inherited parent's for that subtree. Only declared aliases are treated as
+flags — any other single-dash token stays a positional argument or option value, as before.
 
 ### Output schemas
 
@@ -312,13 +333,14 @@ requested.
 
 | Flag | Effect |
 | ---- | ------ |
-| `--help` | Show help (hidden commands omitted) |
+| `-h`, `--help` | Show help (hidden commands omitted) |
 | `--version` | Print the CLI version |
 | `--json` / `--format <pretty\|json>` | `json` prints the structured data; `pretty` (default) is human |
 | `--color` / `--no-color` | Force/disable ANSI color |
 | `--mcp` | Run as an MCP stdio server |
 | `--llms` | Print a Markdown command manifest |
 | `--schema` | Print `{ input, output }` JSON Schemas for the resolved command |
+| `--completions <shell>` | Print a completion script: `bash` \| `zsh` \| `fish` |
 
 If a command declares an option that collides with a built-in name, the **command's option
 wins** and that built-in is disabled for it.
@@ -327,9 +349,34 @@ Disable optional built-in flags independently:
 
 ```ts
 cli.create("internal", {
-  features: { mcp: false, schema: false, llms: false },
+  features: { mcp: false, schema: false, llms: false, json: false, color: false, completions: false },
 });
 ```
+
+`json: false` removes `--json` and `--format` — useful for interactive tools whose human output
+would be suppressed in structured mode. `color: false` removes `--color`/`--no-color`. Disabled
+flags are rejected as unknown options and omitted from help. The programmatic
+`serve(argv, { format })` option and `NO_COLOR`/`FORCE_COLOR` env handling keep working.
+
+Root `mcp: false` / `llms: false` also exclude the whole command tree from those surfaces when
+you use the programmatic `gunsmith/mcp` helpers (`listTools`, `buildServer`, `invokeTool`) —
+not just the `--mcp`/`--llms` flags. The same keys on a child command exclude only that
+command's subtree. `completions: false` removes `--completions` and the reserved `__complete`
+hook.
+
+## Shell completions
+
+```bash
+source <(mycli --completions bash)
+mycli --completions zsh > ~/.zsh/completions/_mycli
+mycli --completions fish > ~/.config/fish/completions/mycli.fish
+```
+
+The scripts delegate to a hidden `mycli __complete <words...>` hook at completion time, so
+candidates always match the running binary: subcommands and their aliases (hidden commands
+omitted), long flags and short aliases, enum option values, and `--format`/`--completions`
+presets. Candidates are exact — there is no filesystem fallback. `__complete` is a reserved
+command name, and it is intercepted as a first argument while `features.completions` is enabled.
 
 ## MCP
 
