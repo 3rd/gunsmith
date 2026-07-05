@@ -2,6 +2,7 @@ import type { Cli } from "../create";
 import type { CommandInvocationResult, ServeOptions } from "../types/execution";
 import { collectCommandEntries, getChildNames, getEffectiveCliFeatures } from "../command/tree";
 import { getExitCodeForError, GunsmithError, isGunsmithError } from "../errors";
+import { isForceColorOn } from "../render/color";
 import { renderError } from "../render/format";
 import { renderHelp, renderLlms } from "../render/help";
 import { createErrorResult } from "../render/result";
@@ -228,10 +229,20 @@ const handleNonRunnableCommand = (ctx: ServeContext): number | undefined => {
 const runCommandInvocation = async (ctx: ServeContext) => {
   const { env, hasStdin, invocation, isTTY, opts, parsedGlobals, stderr } = ctx;
 
-  // propagate "no color" to Node's formatting and subprocesses for this invocation; real env only
-  const setNoColor =
-    !parsedGlobals.shouldUseAnsi && opts.env === undefined && process.env.NO_COLOR === undefined;
+  // propagate an explicit --no-color to Node's formatting and subprocesses for this invocation;
+  // real env only. Only the flag is propagated: it is a per-invocation user instruction with no
+  // other channel to reach subprocesses, whereas ambient NO_COLOR/FORCE_COLOR already reach
+  // children through env inheritance, and on non-TTY runs children detect the same pipe and
+  // disable color themselves — injecting there would leak synthetic vars into handlers that
+  // treat the env as data (env dumps, forwarding to daemons)
+  const propagateNoColor = parsedGlobals.colorFlag === false && opts.env === undefined;
+  const setNoColor = propagateNoColor && process.env.NO_COLOR === undefined;
+  // downstream consumers (Node, chalk, ...) let FORCE_COLOR beat NO_COLOR, so an ambient truthy
+  // FORCE_COLOR must also be turned off for NO_COLOR=1 to stick; the explicit flag outranks it
+  const forceColorToRestore =
+    propagateNoColor && isForceColorOn(process.env.FORCE_COLOR) ? process.env.FORCE_COLOR : undefined;
   if (setNoColor) process.env.NO_COLOR = "1";
+  if (forceColorToRestore !== undefined) process.env.FORCE_COLOR = "0";
   try {
     const cmdFlags = new Map(
       [...parsedGlobals.tokens.flags].filter(([name]) => !parsedGlobals.globalNames.has(name)),
@@ -275,6 +286,7 @@ const runCommandInvocation = async (ctx: ServeContext) => {
     return finishCommand(ctx, result);
   } finally {
     if (setNoColor) delete process.env.NO_COLOR;
+    if (forceColorToRestore !== undefined) process.env.FORCE_COLOR = forceColorToRestore;
   }
 };
 

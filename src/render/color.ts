@@ -1,3 +1,7 @@
+// single source for which FORCE_COLOR values mean "force color on"
+export const isForceColorOn = (value: string | undefined): value is string =>
+  value !== undefined && value !== "0" && value !== "false" && value !== "";
+
 export const getShouldUseAnsi = (params: {
   colorFlag: boolean | undefined;
   env: Record<string, string | undefined>;
@@ -5,8 +9,7 @@ export const getShouldUseAnsi = (params: {
 }) => {
   if (params.colorFlag === false) return false;
   if (params.colorFlag === true) return true;
-  const fc = params.env.FORCE_COLOR;
-  if (fc !== undefined) return !(fc === "0" || fc === "false" || fc === "");
+  if (params.env.FORCE_COLOR !== undefined) return isForceColorOn(params.env.FORCE_COLOR);
   // empty NO_COLOR is ignored per the no-color spec
   if (params.env.NO_COLOR !== undefined && params.env.NO_COLOR !== "") return false;
   return params.isTTY;

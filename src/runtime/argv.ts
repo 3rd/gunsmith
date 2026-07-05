@@ -69,6 +69,7 @@ export const parseGlobals = (params: {
     optionKeys,
     globals,
     globalNames,
+    colorFlag,
     shouldUseAnsi,
     paint: makePaint(shouldUseAnsi),
     isJSON: opts.format === "json" || (opts.format !== "pretty" && has("json")),

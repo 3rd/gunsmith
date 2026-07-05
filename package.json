@@ -1,6 +1,6 @@
 {
   "name": "gunsmith",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Tiny CLI framework for Node and Bun.",
   "keywords": [
     "cli",

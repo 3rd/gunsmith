@@ -548,7 +548,7 @@ describe("context", () => {
     expect(r.stdout).toContain(`partial ${ESC}[32 stays\n`);
     expect(r.stderr).toBe("fail\n");
   });
-  test("no-color decision propagates to process.env.NO_COLOR only for real-env runs", async () => {
+  test("explicit --no-color propagates to process.env.NO_COLOR only for real-env runs", async () => {
     const savedNoColor = process.env.NO_COLOR;
     const savedForceColor = process.env.FORCE_COLOR;
     delete process.env.NO_COLOR;
@@ -561,17 +561,60 @@ describe("context", () => {
         },
       });
       const serveOpts = { stdout: () => {}, stderr: () => {}, exit: () => {} };
-      // real process env (no env injected), non-TTY -> set during the run, restored after
-      await app.serve([], { ...serveOpts, isTTY: false });
+      // real process env (no env injected), explicit --no-color -> set during the run, restored after
+      await app.serve(["--no-color"], { ...serveOpts, isTTY: true });
       expect<string | undefined>(seenDuringRun).toBe("1");
       expect(process.env.NO_COLOR).toBeUndefined();
+      // color off without the flag (plain non-TTY run) -> untouched; children detect the same pipe
+      seenDuringRun = "unset";
+      await app.serve([], { ...serveOpts, isTTY: false });
+      expect<string | undefined>(seenDuringRun).toBeUndefined();
       // color on -> untouched during the run
       seenDuringRun = "unset";
       await app.serve(["--color"], { ...serveOpts, isTTY: false });
       expect<string | undefined>(seenDuringRun).toBeUndefined();
       // injected env (testkit/embedders) -> real process env is never mutated
-      await runCli(app, [], { isTTY: false });
+      await runCli(app, ["--no-color"], { isTTY: true });
       expect(process.env.NO_COLOR).toBeUndefined();
+    } finally {
+      if (savedNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = savedNoColor;
+      if (savedForceColor === undefined) delete process.env.FORCE_COLOR;
+      else process.env.FORCE_COLOR = savedForceColor;
+    }
+  });
+  test("explicit --no-color turns ambient FORCE_COLOR off for real-env runs", async () => {
+    const savedNoColor = process.env.NO_COLOR;
+    const savedForceColor = process.env.FORCE_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+    try {
+      type SeenEnv = { forceColor: string | undefined; noColor: string | undefined };
+      let seenDuringRun: SeenEnv | undefined;
+      const app = cli.create("x", {
+        run: () => {
+          seenDuringRun = { forceColor: process.env.FORCE_COLOR, noColor: process.env.NO_COLOR };
+        },
+      });
+      const serveOpts = { stdout: () => {}, stderr: () => {}, exit: () => {} };
+      // --no-color beats ambient FORCE_COLOR -> both env vars reflect "off" during the run, restored after
+      await app.serve(["--no-color"], { ...serveOpts, isTTY: true });
+      expect(seenDuringRun).toEqual({ forceColor: "0", noColor: "1" });
+      expect(process.env.FORCE_COLOR).toBe("1");
+      expect(process.env.NO_COLOR).toBeUndefined();
+      // without the flag, ambient FORCE_COLOR wins the color decision -> untouched
+      seenDuringRun = undefined;
+      await app.serve([], { ...serveOpts, isTTY: false });
+      expect<SeenEnv | undefined>(seenDuringRun).toEqual({ forceColor: "1", noColor: undefined });
+      // an already-off FORCE_COLOR is left alone
+      process.env.FORCE_COLOR = "0";
+      seenDuringRun = undefined;
+      await app.serve(["--no-color"], { ...serveOpts, isTTY: true });
+      expect<SeenEnv | undefined>(seenDuringRun).toEqual({ forceColor: "0", noColor: "1" });
+      // injected env (testkit/embedders) -> real process env is never mutated
+      process.env.FORCE_COLOR = "1";
+      await runCli(app, ["--no-color"], { isTTY: true });
+      expect(process.env.FORCE_COLOR).toBe("1");
     } finally {
       if (savedNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = savedNoColor;

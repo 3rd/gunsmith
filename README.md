@@ -360,12 +360,15 @@ requested.
 | Handler failure | exit `1` |
 | Error format | `error: message` or structured JSON |
 
-Gunsmith's own output follows the color rule automatically. When color is disabled, two more
-things happen so `--no-color` and `NO_COLOR` work end to end: ANSI color codes are stripped from
-your handler's `console` output (covering color libraries that decided support once at import
-time), and — when serving the real process environment — `NO_COLOR=1` is set in `process.env`
-for the duration of the invocation (never overriding a value you set, and restored afterward),
-so Node's own formatting and subprocesses spawned by the handler follow the same decision. Two cases are not covered: output written directly to
+Gunsmith's own output follows the color rule automatically. Whenever color is disabled, ANSI
+codes are also stripped from your handler's `console` output (covering color libraries that
+decided support once at import time). An explicit `--no-color` on the real process environment
+goes further: for the duration of the invocation, `NO_COLOR=1` is set (never replacing an
+existing value) and a truthy ambient `FORCE_COLOR` is set to `0` (downstream consumers let it
+beat `NO_COLOR`), both restored afterward, so Node's own formatting and subprocesses follow the
+flag. Only the flag is propagated: ambient variables already reach children by inheritance, and
+non-TTY children detect the pipe themselves — handlers that treat the env as data never see
+synthetic values otherwise. Two cases are not covered: output written directly to
 `process.stdout`/`process.stderr` is not intercepted, and nothing can force color back onto a
 library that already decided against it. For those, gate on the context's `shouldUseColor`,
 which carries the same resolved decision:
