@@ -639,6 +639,36 @@ describe("serve error boundary", () => {
     expect(bad.exitCode).toBe(2);
     expect(expectCommandErrorResult(bad.json).error.message).toContain("no bananas");
   });
+  test("unparseable input types are rejected at startup", async () => {
+    const plainNumber = cli.create("x", {
+      options: z.object({ minStatus: z.number() }),
+      run: () => {},
+    });
+    await awaitRejection(
+      expect(runCli(plainNumber, [])).rejects.toThrow(
+        'option "minStatus" of "x" is z.number() but CLI values arrive as strings; use z.coerce.number()',
+      ),
+    );
+    const variadicNumbers = cli.create("x", {
+      args: z.object({ ports: z.array(z.number()) }),
+      run: () => {},
+    });
+    await awaitRejection(
+      expect(runCli(variadicNumbers, [])).rejects.toThrow('argument "ports" of "x" is z.number()'),
+    );
+    const satisfiable = cli.create("x", {
+      options: z.object({
+        port: z.coerce.number().default(3000),
+        when: z.coerce.date().optional(),
+        fallback: z.number().catch(1),
+        mixed: z.union([z.number(), z.string()]).optional(),
+      }),
+      run: ({ options }) => options,
+    });
+    const r = await runJson(satisfiable, ["--port", "8080"]);
+    expect(r.exitCode).toBe(0);
+    expect(r.json).toMatchObject({ port: 8080, fallback: 1 });
+  });
   test("isGunsmithError duck-check requires the error-family shape, not just the name", () => {
     expect(isGunsmithError(new UsageError("x"))).toBe(true);
     expect(isGunsmithError({ name: "GunsmithError", code: "VALIDATION", message: "m" })).toBe(true);

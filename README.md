@@ -210,7 +210,9 @@ Context fields:
 ### Zod coercion
 
 CLI values arrive as strings. Booleans are inferred from presence. Use `z.coerce.*` for other
-non-string values.
+non-string values. A plain `z.number()`, `z.bigint()`, or `z.date()` in `args`/`options`/`env`
+can never parse an incoming string, so gunsmith rejects it at startup with a pointer to the
+`z.coerce` form instead of failing every invocation at runtime.
 
 ```ts
 options: z.object({
@@ -466,8 +468,9 @@ Propagated — these reject the `serve()` promise because they are configuration
 input:
 
 - command-tree issues found at startup: invalid command names, alias conflicts, invalid option
-  aliases, unsupported object-level refinements on options/env (a duplicate direct command name
-  fails even earlier — `.command()` throws synchronously at registration)
+  aliases, unsupported object-level refinements on options/env, unparseable value types like a
+  plain `z.number()` (a duplicate direct command name fails even earlier — `.command()` throws
+  synchronously at registration)
 - MCP startup failures: `--mcp` without `@modelcontextprotocol/sdk` installed, duplicate tool
   names
 

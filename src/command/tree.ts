@@ -8,7 +8,7 @@ import type {
 } from "../types/commands";
 import { isLongFlagToken } from "../flags/tokenizer";
 import { mergeObjects } from "../schemas/object";
-import { getAlias, getField, getShapeKeys, hasObjectChecks } from "../schemas/zod";
+import { findUnparseableInputType, getAlias, getField, getShapeKeys, hasObjectChecks } from "../schemas/zod";
 
 const isValidCommandName = (name: string) =>
   name.length > 0 && !isLongFlagToken(name) && name !== "--" && name !== "__complete";
@@ -35,6 +35,25 @@ const findObjectRefinementIssue = (node: CommandNode): string | undefined => {
   for (const part of ["options", "env"] as const) {
     if (hasObjectChecks(node.def[part])) {
       return `object-level refinements on ${part} of "${node.name}" are not supported; validate cross-field rules in run()`;
+    }
+  }
+  return undefined;
+};
+
+const INPUT_PART_LABELS = [
+  ["args", "argument"],
+  ["options", "option"],
+  ["env", "env var"],
+] as const;
+
+const findUnparseableInputIssue = (node: CommandNode): string | undefined => {
+  for (const [part, label] of INPUT_PART_LABELS) {
+    const schema = node.def[part];
+    for (const key of getShapeKeys(schema)) {
+      const type = findUnparseableInputType(getField(schema, key));
+      if (type) {
+        return `${label} "${key}" of "${node.name}" is z.${type}() but CLI values arrive as strings; use z.coerce.${type}()`;
+      }
     }
   }
   return undefined;
@@ -85,6 +104,8 @@ export const findCommandTreeIssue = (root: CommandNode) => {
     if (optionAliasIssue) return optionAliasIssue;
     const refinementIssue = findObjectRefinementIssue(node);
     if (refinementIssue) return refinementIssue;
+    const unparseableIssue = findUnparseableInputIssue(node);
+    if (unparseableIssue) return unparseableIssue;
     const owner = node.name;
     const seen = new Map<string, string>();
     const children = getCommandChildren(node);

@@ -97,6 +97,29 @@ export const hasObjectChecks = (s: z.ZodType | undefined) => {
   return Array.isArray(checks) && checks.length > 0;
 };
 
+const UNPARSEABLE_FROM_ARGV = new Set(["bigint", "date", "int", "number"]);
+
+export const findUnparseableInputType = (s: z.ZodType | undefined): string | undefined => {
+  let cur: unknown = s;
+  for (let i = 0; i < 12; i++) {
+    const def = (
+      cur as { _zod?: { def?: { type?: string; innerType?: unknown; element?: unknown; coerce?: boolean } } }
+    )?._zod?.def;
+    if (!def?.type) return undefined;
+    if (def.type === "catch") return undefined;
+    if (WRAPPERS.has(def.type)) {
+      cur = def.innerType;
+      continue;
+    }
+    if (def.type === "array") {
+      cur = def.element;
+      continue;
+    }
+    return UNPARSEABLE_FROM_ARGV.has(def.type) && def.coerce !== true ? def.type : undefined;
+  }
+  return undefined;
+};
+
 export const getShapeKeys = (obj: z.ZodObject<z.ZodRawShape> | undefined) => {
   return Object.keys(getShape(obj) ?? {});
 };
