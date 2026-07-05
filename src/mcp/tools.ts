@@ -140,6 +140,8 @@ const invokeToolCommand = async <T>(
     },
     isTTY: false,
     isJSON: true,
+    shouldUseColor: false,
+    hasStdin: false,
     rest: [],
     readStdin: async () => "",
     suppressConsole: true,

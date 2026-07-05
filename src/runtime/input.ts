@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { FlagValues } from "../types/flags";
 import type { ParsedCommandInput } from "../types/input";
 import { getSchemaEnvInput } from "../schemas/input-model";
-import { getField, getShapeKeys, isArrayOption } from "../schemas/zod";
+import { getField, getShapeKeys, isArrayOption, isOptional } from "../schemas/zod";
 
 type ParseCommandInputParams = {
   args?: z.ZodObject<z.ZodRawShape>;
@@ -40,6 +40,7 @@ const collectArgsInput = (args: z.ZodObject<z.ZodRawShape> | undefined, position
     if (index === lastIndex && lastIsArray) {
       const collected = positionals.slice(index);
       if (collected.length > 0) argsInput[argKey] = collected;
+      else if (!isOptional(getField(args, argKey))) argsInput[argKey] = [];
     } else if (positionals[index] !== undefined) {
       argsInput[argKey] = positionals[index];
     }

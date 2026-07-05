@@ -1,5 +1,5 @@
 import cli, { Cli } from "./create";
-export { GunsmithError, isGunsmithError } from "./errors";
+export { GunsmithError, isGunsmithError, UsageError } from "./errors";
 export type {
   AppDefinition,
   CliFeatures,

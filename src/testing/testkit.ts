@@ -62,6 +62,7 @@ const runCliWithOutputFormat = async <T>(
       env: opts.env ?? {},
       isTTY: opts.isTTY ?? false,
       stdin: readStdin,
+      hasStdin: stdin !== undefined,
       format: outputFormat,
     });
   });

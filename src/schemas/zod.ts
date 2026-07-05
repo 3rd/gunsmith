@@ -77,6 +77,26 @@ export const getEnumValues = (s: z.ZodType | undefined): string[] | undefined =>
   return undefined;
 };
 
+export const getArrayElement = (s: z.ZodType | undefined): z.ZodType | undefined => {
+  let cur: unknown = s;
+  for (let i = 0; i < 12; i++) {
+    const def = (cur as { _zod?: { def?: { type?: string; innerType?: unknown; element?: unknown } } })?._zod
+      ?.def;
+    if (!def?.type) return undefined;
+    if (WRAPPERS.has(def.type)) {
+      cur = def.innerType;
+      continue;
+    }
+    return def.type === "array" ? (def.element as z.ZodType) : undefined;
+  }
+  return undefined;
+};
+
+export const hasObjectChecks = (s: z.ZodType | undefined) => {
+  const checks = (s as { _zod?: { def?: { checks?: unknown[] } } } | undefined)?._zod?.def?.checks;
+  return Array.isArray(checks) && checks.length > 0;
+};
+
 export const getShapeKeys = (obj: z.ZodObject<z.ZodRawShape> | undefined) => {
   return Object.keys(getShape(obj) ?? {});
 };

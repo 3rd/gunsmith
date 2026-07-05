@@ -1,6 +1,6 @@
 {
   "name": "gunsmith",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Tiny CLI framework for Node and Bun.",
   "keywords": [
     "cli",
@@ -93,12 +93,13 @@
     "build": "tsdown",
     "examples:typecheck": "tsc --noEmit --ignoreConfig --module Preserve --moduleResolution bundler --target ESNext --lib ESNext --types node,bun --strict --skipLibCheck examples/**/*.ts",
     "examples:check": "bun run scripts/check-examples.mjs",
+    "check:compile": "bun run scripts/check-compile.mjs",
     "smoke:node": "node ./scripts/smoke-dist.mjs",
     "smoke:bun": "bun run ./scripts/smoke-dist.mjs",
     "publint": "bunx publint --level=warning",
     "attw": "bunx -p @arethetypeswrong/cli attw --pack .",
     "prepack": "bun run build",
-    "verify": "tsc --noEmit && bun test && tsdown && node ./scripts/smoke-dist.mjs && bun run ./scripts/smoke-dist.mjs && bun run examples:typecheck && bun run examples:check && bunx publint --level=warning && bun run attw"
+    "verify": "tsc --noEmit && bun test && tsdown && node ./scripts/smoke-dist.mjs && bun run ./scripts/smoke-dist.mjs && bun run examples:typecheck && bun run examples:check && bun run check:compile && bunx publint --level=warning && bun run attw"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

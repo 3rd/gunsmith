@@ -30,6 +30,7 @@ export const resolveInvocation = (root: Cli, argv: string[]): CommandInvocation 
   const input = buildInputModel(def);
   return {
     node,
+    chain,
     helpNode: createCommandNodeView(node, def),
     commandPath,
     remainingArgv,
@@ -61,15 +62,16 @@ export const parseGlobals = (params: {
   const has = (name: string) => globalNames.has(name) && tokens.flags.has(name) && lastValue(name) !== false;
   const colorFlag =
     globalNames.has("color") && tokens.flags.has("color") ? lastValue("color") === true : undefined;
-  const fmtVal = has("format") ? lastValue("format") : undefined;
+  const shouldUseAnsi = getShouldUseAnsi({ colorFlag, env, isTTY });
 
   return {
     tokens,
     optionKeys,
     globals,
     globalNames,
-    paint: makePaint(getShouldUseAnsi({ colorFlag, env, isTTY })),
-    isJSON: opts.format === "json" || (opts.format !== "pretty" && (has("json") || fmtVal === "json")),
+    shouldUseAnsi,
+    paint: makePaint(shouldUseAnsi),
+    isJSON: opts.format === "json" || (opts.format !== "pretty" && has("json")),
     has,
     lastValue,
   };

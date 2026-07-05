@@ -16,6 +16,7 @@ const examples = [
   ["examples/integrations/features.ts", ["--help"]],
   ["examples/integrations/errors.ts", ["publish", "--json"]],
   ["examples/integrations/errors.ts", ["publish", "--channel", "next", "--json"], undefined, 1],
+  ["examples/integrations/doctor.ts", ["check"], undefined, 1],
   ["examples/testing/testkit.ts", []],
 ];
 

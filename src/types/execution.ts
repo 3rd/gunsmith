@@ -4,10 +4,17 @@ import type { CommandErrorResult, CommandSuccessResult } from "./result";
 export interface ServeOptions {
   stdout?: (value: string) => void;
   stderr?: (value: string) => void;
+  /**
+   * Receives the final exit code, exactly once per invocation. Default: record nonzero
+   * codes via `process.exitCode` and let the event loop drain — no forced `process.exit`,
+   * and a zero result never overwrites a handler-set `process.exitCode`. Provide
+   * `(c) => process.exit(c)` to restore forced termination.
+   */
   exit?: (code: number) => void;
   env?: Record<string, string | undefined>;
   stdin?: () => Promise<string>;
   isTTY?: boolean;
+  hasStdin?: boolean;
   format?: "json" | "pretty";
 }
 

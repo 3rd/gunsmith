@@ -39,10 +39,18 @@ export const getDuplicateKeyMessage = (keys: string[]) => {
   return `schema fields must be unique across merged inputs: ${keys.join(", ")}`;
 };
 
-export const toJsonSchema = (schema: z.ZodType | undefined): Record<string, unknown> => {
+const convertToJsonSchema = (
+  schema: z.ZodType | undefined,
+  io: "input" | "output",
+): Record<string, unknown> => {
   if (!schema) return { type: "object", properties: {}, additionalProperties: false };
   return z.toJSONSchema(schema, {
+    io,
     unrepresentable: "any",
     override: overrideDateJsonSchema as (ctx: unknown) => void,
   }) as Record<string, unknown>;
 };
+
+export const toJsonSchema = (schema: z.ZodType | undefined) => convertToJsonSchema(schema, "output");
+
+export const toInputJsonSchema = (schema: z.ZodType | undefined) => convertToJsonSchema(schema, "input");

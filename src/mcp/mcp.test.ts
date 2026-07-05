@@ -33,6 +33,39 @@ describe("listTools", () => {
     ]);
   });
 
+  test("tool input schemas mark defaulted options optional", () => {
+    const root = cli.create("app");
+    root.command("convert", {
+      options: z.object({ quiet: z.boolean().default(false), file: z.string() }),
+      run: () => ({ ok: true }),
+    });
+    const tool = listTools(root).find((t) => t.name === "convert")!;
+    const input = tool.inputSchema as { required?: string[] };
+    expect(input.required).toEqual(["file"]);
+  });
+
+  test("inheritOptions: false excludes parent options from tool schemas and named input", async () => {
+    const root = cli.create("app", { options: z.object({ port: z.coerce.number().default(3000) }) });
+    root.command("isolated", {
+      inheritOptions: false,
+      options: z.object({ out: z.string().default("dist") }),
+      run: ({ options }) => ({ options }),
+    });
+    root.command("inheriting", { run: () => ({ ok: true }) });
+    const tools = listTools(root);
+    expect(Object.keys(tools.find((t) => t.name === "isolated")!.inputSchema.properties as object)).toEqual([
+      "out",
+    ]);
+    expect(Object.keys(tools.find((t) => t.name === "inheriting")!.inputSchema.properties as object)).toEqual(
+      ["port"],
+    );
+    const rejected = await invokeTool(root, "isolated", { port: 4000 });
+    expect(rejected.structuredContent).toMatchObject({
+      ok: false,
+      error: { code: "VALIDATION", message: 'unknown tool argument "port"' },
+    });
+  });
+
   test("hidden parent commands hide their descendants", () => {
     const root = cli.create("app");
     const hidden = cli.command("internal", { hidden: true });

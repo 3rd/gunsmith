@@ -45,5 +45,16 @@ export const buildServer = (root: Cli, opts: McpRuntimeOptions = {}): Server => 
 };
 
 export const serveMcp = async (root: Cli, opts: McpRuntimeOptions = {}) => {
-  await buildServer(root, opts).connect(new StdioServerTransport());
+  const server = buildServer(root, opts);
+  const transport = new StdioServerTransport();
+  const closed = new Promise<void>((resolve) => {
+    const previous = transport.onclose;
+    transport.onclose = () => {
+      previous?.();
+      resolve();
+    };
+  });
+  await server.connect(transport);
+  // connect() resolves at startup; block until the connection ends
+  await closed;
 };

@@ -50,6 +50,7 @@ assert.equal(publicCore.create, publicCore.default.create);
 assert.equal(publicCore.command, publicCore.default.command);
 assert.equal(typeof publicCore.Cli, "function");
 assert.equal(typeof publicCore.GunsmithError, "function");
+assert.equal(typeof publicCore.UsageError, "function");
 assert.equal(typeof publicCore.isGunsmithError, "function");
 
 const publicTesting = await import("gunsmith/testing");
@@ -68,6 +69,7 @@ assert.equal(packageCjs.command, packageCjs.default.command);
 assert.equal(typeof packageCjs.default.create, "function");
 assert.equal(typeof packageCjs.Cli, "function");
 assert.equal(typeof packageCjs.GunsmithError, "function");
+assert.equal(typeof packageCjs.UsageError, "function");
 assert.equal(typeof packageCjs.isGunsmithError, "function");
 
 const testingCjs = require("gunsmith/testing");
@@ -85,7 +87,7 @@ const mcpCli = path.join(tmp, "cli.mjs");
 fs.writeFileSync(
   mcpCli,
   `import cli from ${JSON.stringify(new URL("../dist/index.js", import.meta.url).href)};
-cli.create("smoke", { run: () => ({ pong: true }) }).serve();
+cli.create("smoke", { run: () => ({ pong: true }) }).serve(undefined, { exit: (code) => process.exit(code) });
 `,
 );
 const client = new Client({ name: "smoke", version: "1.0.0" });

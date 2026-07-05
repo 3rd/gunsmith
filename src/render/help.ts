@@ -7,8 +7,10 @@ import { GLOBAL_FLAGS } from "../flags/globals";
 import { getEffectiveAliasOwners } from "../flags/model";
 import {
   getAlias,
+  getArrayElement,
   getBaseType,
   getDescription,
+  getEnumValues,
   getField,
   getShapeKeys,
   isArrayOption,
@@ -16,6 +18,21 @@ import {
   isOptional,
   toKebabCase,
 } from "../schemas/zod";
+
+const getValueLabel = (field: z.ZodType | undefined): string => {
+  const enumValues = getEnumValues(field);
+  if (enumValues && enumValues.length > 0) return `<${enumValues.join("|")}>`;
+  if (getBaseType(field) === "array") {
+    const element = getArrayElement(field);
+    const elementValues = getEnumValues(element);
+    const label =
+      elementValues && elementValues.length > 0 ?
+        elementValues.join("|")
+      : (getBaseType(element) ?? "string");
+    return `<${label}...>`;
+  }
+  return `<${getBaseType(field) ?? "string"}>`;
+};
 
 const getArgumentUsage = (args: z.ZodObject<z.ZodRawShape> | undefined) => {
   const keys = getShapeKeys(args);
@@ -38,11 +55,10 @@ const getOptionLines = (
     const f = getField(options, k);
     const optionName = `--${toKebabCase(k)}`;
     const rawAlias = getAlias(f);
-    const alias = rawAlias !== undefined && aliasOwners.get(rawAlias) === `option:${k}` ? rawAlias : undefined;
+    const alias =
+      rawAlias !== undefined && aliasOwners.get(rawAlias) === `option:${k}` ? rawAlias : undefined;
     const names = alias ? paint(`-${alias}, ${optionName}`, "yellow") : `    ${paint(optionName, "yellow")}`;
-    const type = getBaseType(f) ?? "string";
-    const valueLabel = `<${type}>`;
-    const value = isBooleanOption(f) ? "" : ` ${paint(valueLabel, "gray")}`;
+    const value = isBooleanOption(f) ? "" : ` ${paint(getValueLabel(f), "gray")}`;
     const requiredLabel = isOptional(f) ? "" : paint(" (required)", "gray");
     const desc = getDescription(f);
     const description = desc ? `  ${desc}` : "";
@@ -57,24 +73,28 @@ const getUsageLine = (
   paint: ReturnType<typeof makePaint>,
 ) => {
   const usageParts = [paint([binName, ...commandPath].join(" "), "cyan", "bold")];
-  if (getCommandChildren(node).size > 0) usageParts.push("<command>");
+  if (getCommandChildren(node).size > 0) usageParts.push(node.def.run ? "[command]" : "<command>");
   if (node.def.options && getShapeKeys(node.def.options).length > 0) usageParts.push("[options]");
   const args = getArgumentUsage(node.def.args);
   if (args) usageParts.push(args);
+  if (node.def.rest) usageParts.push("[-- <args...>]");
   return `${paint("Usage:", "bold")} ${usageParts.join(" ")}`;
 };
 
 const pushArgumentLines = (lines: string[], node: CommandNode, paint: ReturnType<typeof makePaint>) => {
   const argKeys = getShapeKeys(node.def.args);
-  if (argKeys.length === 0) return;
+  if (argKeys.length === 0 && !node.def.rest) return;
 
   lines.push("", paint("Arguments:", "bold"));
   for (const k of argKeys) {
     const f = getField(node.def.args, k);
     const d = getDescription(f);
-    const typeLabel = `<${getBaseType(f) ?? "string"}>`;
     const description = d ? `  ${d}` : "";
-    lines.push(`  ${paint(k, "cyan")} ${paint(typeLabel, "gray")}${description}`);
+    lines.push(`  ${paint(k, "cyan")} ${paint(getValueLabel(f), "gray")}${description}`);
+  }
+  if (node.def.rest) {
+    const description = node.def.rest.description ? `  ${node.def.rest.description}` : "";
+    lines.push(`  ${paint("--", "cyan")} ${paint("<args...>", "gray")}${description}`);
   }
 };
 
@@ -116,7 +136,7 @@ const pushExampleLines = (lines: string[], node: CommandNode, paint: ReturnType<
 
 const getGlobalLabel = (g: GlobalFlag, aliasOwners: Map<string, string>) => {
   if (g.name === "color") return "--color / --no-color";
-  const value = g.bool ? "" : " <value>";
+  const value = g.bool ? "" : ` <${g.values ? g.values.join("|") : "value"}>`;
   const long = `--${toKebabCase(g.name)}${value}`;
   const owned = g.alias !== undefined && aliasOwners.get(g.alias) === `global:${g.name}`;
   return owned ? `-${g.alias}, ${long}` : long;
@@ -137,9 +157,12 @@ export const renderHelp = (
   pushOptionLines(lines, node, paint, aliasOwners);
   pushCommandLines(lines, node, paint);
   pushExampleLines(lines, node, paint);
+  if (node.def.notes) lines.push("", node.def.notes);
 
   lines.push("", paint("Global options:", "bold"));
-  for (const g of globals) lines.push(`  ${paint(getGlobalLabel(g, aliasOwners), "yellow")}  ${g.description}`);
+  for (const g of globals) {
+    lines.push(`  ${paint(getGlobalLabel(g, aliasOwners), "yellow")}  ${g.description}`);
+  }
 
   return `${lines.join("\n")}\n`;
 };

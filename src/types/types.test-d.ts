@@ -41,6 +41,43 @@ command("feature-flags-command", {
   features: { mcp: false, llms: false },
 });
 
+// inheritOptions: false removes parent options from the child context; env still inherits
+const inheritApp = cli.create("inherit", {
+  options: z.object({ port: z.coerce.number().default(3000) }),
+  env: z.object({ TOKEN: z.string().optional() }),
+});
+inheritApp.command("isolated", {
+  inheritOptions: false,
+  options: z.object({ out: z.string().default("dist") }),
+  run: (c) => {
+    const _out: string = c.options.out;
+    const _token: string | undefined = c.env.TOKEN;
+    // @ts-expect-error parent option is not inherited
+    const _port = c.options.port;
+    return [_out, _token, _port];
+  },
+});
+inheritApp.command("inheriting", {
+  options: z.object({ watch: z.boolean().default(false) }),
+  run: (c) => {
+    const _port: number = c.options.port;
+    const _watch: boolean = c.options.watch;
+    return [_port, _watch];
+  },
+});
+
+// a widened inheritOptions gets the isolating member's typing: parent options are never
+// typed as present when the runtime might strip them
+const widenedInherit: boolean = false;
+inheritApp.command("widened", {
+  inheritOptions: widenedInherit,
+  run: (c) => {
+    // @ts-expect-error parent options are not typed for a possibly-isolating def
+    const _port = c.options.port;
+    return _port;
+  },
+});
+
 // outputSchema types returned structured data
 cli.create("typed-output", {
   outputSchema: z.object({ clean: z.boolean() }),

@@ -52,3 +52,25 @@ export const withConsoleCapture = async <T>(
 export const suppressedConsole: ConsoleCapture = Object.fromEntries(
   METHODS.map((method) => [method, () => {}]),
 ) as ConsoleCapture;
+
+// complete SGR (color/style) sequences only; cursor/erase/OSC sequences never match
+const ANSI_COLOR_PATTERN = /\u001B\[[\d:;]*m/g;
+
+const stripAnsiColors = (value: unknown) =>
+  typeof value === "string" ? value.replace(ANSI_COLOR_PATTERN, "") : value;
+
+export const createColorStrippingConsole = (): ConsoleCapture => {
+  // forward to the enclosing capture (e.g. the testkit) instead of bypassing it
+  const parent = consoleCaptureStorage.getStore();
+  return Object.fromEntries(
+    METHODS.map((method) => [
+      method,
+      (args: unknown[]) => {
+        const stripped = args.map(stripAnsiColors);
+        const forward = parent?.[method];
+        if (forward) forward(stripped);
+        else original?.[method](...stripped);
+      },
+    ]),
+  ) as ConsoleCapture;
+};

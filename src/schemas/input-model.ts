@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { AnyCommandDefinition } from "../types/commands";
 import type { InputModel, InputPart } from "../types/input";
 import { GunsmithError } from "../errors";
-import { getDuplicateKeyMessage, getDuplicateKeys, mergeObjects, toJsonSchema } from "./object";
+import { getDuplicateKeyMessage, getDuplicateKeys, mergeObjects, toInputJsonSchema } from "./object";
 import { getShapeKeys } from "./zod";
 
 export const buildInputModel = (def: AnyCommandDefinition): InputModel => {
@@ -29,7 +29,7 @@ export const getInputJsonSchema = (
   model: InputModel,
   parts: readonly InputPart[],
 ): Record<string, unknown> => {
-  return toJsonSchema(mergeObjects(getInputSchemas(model, parts)));
+  return toInputJsonSchema(mergeObjects(getInputSchemas(model, parts)));
 };
 
 export const splitNamedInput = (model: InputModel, rawInput: Record<string, unknown>) => {

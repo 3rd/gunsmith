@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { mergeObjects, toJsonSchema } from "./object";
+import { mergeObjects, toInputJsonSchema, toJsonSchema } from "./object";
 
 describe("toJsonSchema", () => {
   test("coerced date does not throw and becomes date-time string", () => {
@@ -36,5 +36,26 @@ describe("mergeObjects", () => {
   });
   test("all undefined -> undefined", () => {
     expect(mergeObjects([undefined, undefined])).toBeUndefined();
+  });
+});
+
+describe("toInputJsonSchema", () => {
+  test("defaulted fields are optional with the default present", () => {
+    const js = toInputJsonSchema(
+      z.object({
+        clipboard: z.boolean().default(false),
+        engine: z.enum(["a", "b"]).default("a"),
+        name: z.string(),
+      }),
+    ) as { required?: string[]; properties: Record<string, { default?: unknown }> };
+    expect(js.required).toEqual(["name"]);
+    expect(js.properties.clipboard?.default).toBe(false);
+    expect(js.properties.engine?.default).toBe("a");
+  });
+  test("output mode keeps defaulted fields required", () => {
+    const js = toJsonSchema(z.object({ clipboard: z.boolean().default(false) })) as {
+      required?: string[];
+    };
+    expect(js.required).toEqual(["clipboard"]);
   });
 });

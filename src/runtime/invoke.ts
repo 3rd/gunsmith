@@ -13,6 +13,8 @@ type InvokeCommandParams = {
   inputs: CommandInputValues;
   isTTY: boolean;
   isJSON: boolean;
+  shouldUseColor: boolean;
+  hasStdin: boolean;
   rest: string[];
   readStdin: () => Promise<string>;
   suppressConsole: boolean;
@@ -66,8 +68,21 @@ const createInvocationResult = (result: CommandRunResult): CommandInvocationResu
 };
 
 export const invokeCommand = async (params: InvokeCommandParams): Promise<CommandInvocationResult> => {
-  const { def, input, name, inputs, isTTY, isJSON, rest, readStdin, suppressConsole, debug, nodeEnv } =
-    params;
+  const {
+    def,
+    input,
+    name,
+    inputs,
+    isTTY,
+    isJSON,
+    shouldUseColor,
+    hasStdin,
+    rest,
+    readStdin,
+    suppressConsole,
+    debug,
+    nodeEnv,
+  } = params;
   const parsed = validateCommandInput(input, inputs);
 
   if (isGunsmithError(parsed)) return createValidationResult(parsed);
@@ -81,6 +96,8 @@ export const invokeCommand = async (params: InvokeCommandParams): Promise<Comman
       env: parsed.env,
       isTTY,
       isJSON,
+      shouldUseColor,
+      hasStdin,
       rest,
       readStdin,
     },

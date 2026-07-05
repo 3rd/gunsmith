@@ -60,7 +60,7 @@ export class Cli<
 
   constructor(name: string, def?: AnyCommandDefinition, features?: CliFeatures) {
     this.name = name;
-    this.def = features ? { ...(def ?? {}), features } : (def ?? {});
+    this.def = features ? { ...def, features } : (def ?? {});
     this.features = resolveCliFeatures(features ?? def?.features);
   }
 
@@ -71,14 +71,23 @@ export class Cli<
     OutputSchema extends z.ZodType | undefined = undefined,
   >(
     name: string,
-    def: CommandChildDefinition<
-      ArgsSchema,
-      OptionsSchema,
-      EnvSchema,
-      OutputSchema,
-      ParentOptionsSchema,
-      ParentEnvSchema
-    >,
+    def:
+      | (CommandChildDefinition<
+          ArgsSchema,
+          OptionsSchema,
+          EnvSchema,
+          OutputSchema,
+          undefined,
+          ParentEnvSchema
+        > & { inheritOptions: false })
+      | (CommandChildDefinition<
+          ArgsSchema,
+          OptionsSchema,
+          EnvSchema,
+          OutputSchema,
+          ParentOptionsSchema,
+          ParentEnvSchema
+        > & { inheritOptions?: true }),
   ): this;
   command(
     sub: Cli<z.ZodObject<z.ZodRawShape> | undefined, z.ZodObject<z.ZodRawShape> | undefined, "command">,
@@ -110,7 +119,7 @@ export class Cli<
     return this;
   }
 
-  serve(argv?: string[], opts?: ServeOptions): Promise<void> {
+  serve(argv?: string[], opts?: ServeOptions): Promise<number> {
     return serve(this, argv ?? process.argv.slice(2), opts ?? {});
   }
 }

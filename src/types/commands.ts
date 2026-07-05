@@ -19,6 +19,8 @@ export interface CommandContextValue<Args, Options, Env> {
   env: Env;
   isTTY: boolean;
   isJSON: boolean;
+  shouldUseColor: boolean;
+  hasStdin: boolean;
   rest: string[];
   readStdin: () => Promise<string>;
 }
@@ -44,6 +46,7 @@ export type ChildContext<
 export interface CommandFeatures {
   mcp?: boolean;
   llms?: boolean;
+  json?: boolean;
 }
 
 export interface CommandDefinition<
@@ -56,15 +59,18 @@ export interface CommandDefinition<
   description?: string;
   args?: ArgsSchema;
   options?: OptionsSchema;
+  inheritOptions?: boolean;
   env?: EnvSchema;
   outputSchema?: OutputSchema;
   validateOutput?: OutputValidationMode;
   alias?: string[] | string;
   examples?: { command: string; description?: string }[];
+  rest?: { description?: string };
+  notes?: string;
   version?: string;
   hidden?: boolean;
   features?: CommandFeatures;
-  help?: string | ((generatedHelp: string) => string);
+  help?: ((generatedHelp: string) => string) | string;
   run?: (context: HandlerContext) => CommandRunReturn<OutputSchema>;
 }
 
@@ -83,7 +89,7 @@ export type AppDefinition<
   OutputSchema extends z.ZodType | undefined = undefined,
 > = Omit<
   CommandDefinition<ArgsSchema, OptionsSchema, EnvSchema, HandlerContext, OutputSchema>,
-  "alias" | "features" | "hidden"
+  "alias" | "features" | "hidden" | "inheritOptions"
 > & {
   features?: CliFeatures;
 };
@@ -127,6 +133,7 @@ export interface CommandEntry {
 
 export interface CommandInvocation {
   node: CommandNode;
+  chain: CommandNode[];
   helpNode: CommandNode;
   commandPath: string[];
   remainingArgv: string[];

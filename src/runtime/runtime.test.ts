@@ -129,16 +129,20 @@ describe("global flags before subcommand (C2)", () => {
     const r = await runCli(createDemoCli(), ["--json", "status"]);
     expect(r.json).toEqual({ clean: true });
   });
-  test("value global (--format) before a subcommand consumes its value and resolves", async () => {
-    const r = await runCli(createDemoCli(), ["--format", "json", "task", "list"]);
-    expect(r.json).toEqual({ state: "open" });
+  test("a value option before a subcommand consumes its value and resolves", async () => {
+    const a = cli.create("app", {
+      options: z.object({ mode: z.string().default("dev") }),
+    });
+    a.command("build", { run: ({ options }) => options });
+    const r = await runJson(a, ["--mode", "build", "build"]);
+    expect(r.json).toEqual({ mode: "build" });
   });
   test("root value option that shadows a boolean global still consumes before a subcommand", async () => {
     const a = cli.create("app", {
       options: z.object({ json: z.string().default("dev") }),
     });
     a.command("build", { run: ({ options }) => options });
-    const r = await runCli(a, ["--format", "json", "--json", "prod", "build"]);
+    const r = await runJson(a, ["--json", "prod", "build"]);
     expect(r.json).toEqual({ json: "prod" });
   });
 });
@@ -156,7 +160,7 @@ describe("app features", () => {
 
     const mcp = await runCli(noMcp, ["--mcp"], noColor);
     expect(mcp.exitCode).toBe(2);
-    expect(mcp.stderr).toBe('error (VALIDATION): unknown option "--mcp"\n');
+    expect(mcp.stderr).toBe('error: unknown option "--mcp"\n');
 
     const noSchemaOrLlms = cli.create("app", {
       features: { schema: false, llms: false },
@@ -169,11 +173,11 @@ describe("app features", () => {
 
     const schema = await runCli(noSchemaOrLlms, ["--schema"], noColor);
     expect(schema.exitCode).toBe(2);
-    expect(schema.stderr).toBe('error (VALIDATION): unknown option "--schema"\n');
+    expect(schema.stderr).toBe('error: unknown option "--schema"\n');
 
     const llms = await runCli(noSchemaOrLlms, ["--llms"], noColor);
     expect(llms.exitCode).toBe(2);
-    expect(llms.stderr).toBe('error (VALIDATION): unknown option "--llms"\n');
+    expect(llms.stderr).toBe('error: unknown option "--llms"\n');
   });
 });
 
@@ -254,20 +258,18 @@ describe("missing option value (C4)", () => {
     expect(expectCommandErrorResult(r.json).error.message).toBe('option "--name" requires a value');
   });
   test("--help short-circuits a missing global value", async () => {
-    const r = await runCli(createDemoCli(), ["--format", "--help"], noColor);
+    const r = await runCli(createDemoCli(), ["--completions", "--help"], noColor);
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toBe("");
     expect(r.stdout).toContain("Usage:");
   });
 });
 
-describe("invalid --format (C5)", () => {
-  test("unrecognized format value -> VALIDATION exit 2 with did-you-mean", async () => {
+describe("--format is not a built-in (C5)", () => {
+  test("--format is an ordinary unknown option", async () => {
     const r = await runJson(createDemoCli(), ["status", "--format", "jon"]);
     expect(r.exitCode).toBe(2);
-    expect(expectCommandErrorResult(r.json).error.message).toBe(
-      'invalid --format "jon"; expected pretty or json; did you mean "json"?',
-    );
+    expect(expectCommandErrorResult(r.json).error.message).toContain('unknown option "--format"');
   });
 });
 
@@ -303,14 +305,59 @@ describe("collision rule", () => {
   });
 });
 
-describe("--format overrides", () => {
-  test("--format json makes output structured", async () => {
-    const r = await runCli(createOptionCli({ v: z.string().default("hi") }), ["--format", "json"]);
-    expect(r.json).toEqual({ v: "hi" });
+describe("user-defined --format option", () => {
+  test("a user format option parses as an ordinary option with no feature config", async () => {
+    const r = await runJson(createOptionCli({ format: z.enum(["md", "html"]).default("md") }), [
+      "--format",
+      "html",
+    ]);
+    expect(r.json).toEqual({ format: "html" });
   });
-  test("--format pretty stays human (no result)", async () => {
-    const r = await runCli(createOptionCli({ v: z.string().default("hi") }), ["--format", "pretty"]);
-    expect(r.json).toBeUndefined();
+});
+
+describe("variadic positionals", () => {
+  test("zero tokens collect to [] for a plain trailing array", async () => {
+    const app = cli.create("x", {
+      args: z.object({ message: z.array(z.string()) }),
+      run: ({ args }) => args,
+    });
+    const r = await runJson(app, []);
+    expect(r.json).toEqual({ message: [] });
+  });
+  test("zero tokens preserve a .default()", async () => {
+    const app = cli.create("x", {
+      args: z.object({ message: z.array(z.string()).default(["hi"]) }),
+      run: ({ args }) => args,
+    });
+    const r = await runJson(app, []);
+    expect(r.json).toEqual({ message: ["hi"] });
+  });
+  test("zero tokens leave .optional() undefined", async () => {
+    const app = cli.create("x", {
+      args: z.object({ message: z.array(z.string()).optional() }),
+      run: ({ args }) => ({ received: args.message === undefined }),
+    });
+    const r = await runJson(app, []);
+    expect(r.json).toEqual({ received: true });
+  });
+  test(".min(1) rejects zero tokens with the length constraint", async () => {
+    const app = cli.create("x", {
+      args: z.object({ files: z.array(z.string()).min(1) }),
+      run: ({ args }) => args,
+    });
+    const r = await runJson(app, []);
+    expect(r.exitCode).toBe(2);
+    expect(expectCommandErrorResult(r.json).error.message).toContain('invalid argument "files"');
+  });
+  test("one and many tokens are unchanged", async () => {
+    const app = cli.create("x", {
+      args: z.object({ message: z.array(z.string()) }),
+      run: ({ args }) => args,
+    });
+    const oneToken = await runJson(app, ["a"]);
+    const manyTokens = await runJson(app, ["a", "b"]);
+    expect(oneToken.json).toEqual({ message: ["a"] });
+    expect(manyTokens.json).toEqual({ message: ["a", "b"] });
   });
 });
 
@@ -323,7 +370,7 @@ describe("error rendering", () => {
     });
     const r = await runCli(a, [], noColor);
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toBe("error (VALIDATION): oops\n");
+    expect(r.stderr).toBe("error: oops\n");
     expect(r.stdout).toBe("");
   });
   test("color: validation error on a TTY is red", async () => {

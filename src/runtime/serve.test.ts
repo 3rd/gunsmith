@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import type { CommandErrorResult } from "../types/result";
-import { GunsmithError } from "../errors";
+import { GunsmithError, isGunsmithError, UsageError } from "../errors";
 import cli from "../index";
 import { runCli, runJson } from "../testing/testkit";
 
@@ -9,6 +9,9 @@ const expectCommandErrorResult = (json: unknown): CommandErrorResult => {
   expect(json).toMatchObject({ ok: false });
   return json as CommandErrorResult;
 };
+
+// bun-types declare .rejects matchers as void; at runtime they return a promise
+const awaitRejection = (assertion: void) => assertion as unknown as Promise<void>;
 
 const createGreetCli = () =>
   cli.create("greet", {
@@ -146,7 +149,7 @@ describe("parsing & validation", () => {
     const r = await runCli(createGreetCli(), ["Ada", "-p"]);
     expect(r.exitCode).toBe(2);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toBe('error (VALIDATION): unexpected argument "-p"\n');
+    expect(r.stderr).toBe('error: unexpected argument "-p"\n');
   });
   test("single-dash strings can be option values", async () => {
     const app = cli.create("x", {
@@ -219,7 +222,7 @@ describe("exit codes", () => {
     });
     const r = await runCli(app, [], { isTTY: true, env: { NO_COLOR: "1" } });
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toBe("error (VALIDATION): bad\n");
+    expect(r.stderr).toBe("error: bad\n");
   });
   test("thrown handler error -> UNKNOWN exit 1; human stderr", async () => {
     const app = cli.create("x", {
@@ -232,6 +235,32 @@ describe("exit codes", () => {
     expect(human.stderr).toContain("boom");
     const structured = await runJson(app, []);
     expect(expectCommandErrorResult(structured.json).error).toEqual({ code: "UNKNOWN", message: "boom" });
+  });
+  test("thrown UsageError -> exit 2, plain prefix, USAGE code in the envelope", async () => {
+    const app = cli.create("x", {
+      run: () => {
+        throw new UsageError("--duration requires --record");
+      },
+    });
+    const human = await runCli(app, [], { isTTY: true, env: { NO_COLOR: "1" } });
+    expect(human.exitCode).toBe(2);
+    expect(human.stderr).toBe("error: --duration requires --record\n");
+    const structured = await runJson(app, []);
+    expect(structured.exitCode).toBe(2);
+    expect(expectCommandErrorResult(structured.json).error).toEqual({
+      code: "USAGE",
+      message: "--duration requires --record",
+    });
+  });
+  test("multi-line error messages render verbatim", async () => {
+    const app = cli.create("x", {
+      run: () => {
+        throw new Error("line one\nline two");
+      },
+    });
+    const r = await runCli(app, [], { isTTY: true, env: { NO_COLOR: "1" } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe("error: line one\nline two\n");
   });
 });
 
@@ -263,7 +292,7 @@ describe("short option aliases", () => {
   test("unaliased single-dash tokens are still arguments", async () => {
     const r = await runCli(createGreetCli(), ["Ada", "-p"]);
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toBe('error (VALIDATION): unexpected argument "-p"\n');
+    expect(r.stderr).toBe('error: unexpected argument "-p"\n');
   });
   test("duplicate option aliases are a definition error", async () => {
     const app = cli.create("x", {
@@ -273,8 +302,10 @@ describe("short option aliases", () => {
       }),
       run: () => {},
     });
-    await expect(runCli(app, [])).rejects.toThrow(
-      'alias "a" for option "all" of "x" conflicts with option "alpha"',
+    await awaitRejection(
+      expect(runCli(app, [])).rejects.toThrow(
+        'alias "a" for option "all" of "x" conflicts with option "alpha"',
+      ),
     );
   });
   test("multi-letter option aliases are a definition error", async () => {
@@ -282,7 +313,9 @@ describe("short option aliases", () => {
       options: z.object({ all: z.boolean().default(false).meta({ alias: "all" }) }),
       run: () => {},
     });
-    await expect(runCli(app, [])).rejects.toThrow('invalid alias "all" for option "all" of "x"');
+    await awaitRejection(
+      expect(runCli(app, [])).rejects.toThrow('invalid alias "all" for option "all" of "x"'),
+    );
   });
   test("short aliases are recognized before subcommand names during resolution", async () => {
     const app = cli.create("app", {
@@ -364,7 +397,9 @@ describe("shell completions", () => {
   test("__complete is a reserved command name", async () => {
     const app = cli.create("x");
     app.command("__complete", { run: () => {} });
-    await expect(runCli(app, ["anything"])).rejects.toThrow('invalid command name "__complete"');
+    await awaitRejection(
+      expect(runCli(app, ["anything"])).rejects.toThrow('invalid command name "__complete"'),
+    );
   });
   test("__complete does not advertise shadowed built-in aliases", async () => {
     const app = cli.create("x", {
@@ -402,9 +437,7 @@ describe("shell completions", () => {
     const r = await runCli(createDemoCli(), ["__complete", "task", "list", "--state", ""]);
     expect(r.stdout.split("\n").filter(Boolean)).toEqual(["open", "closed"]);
   });
-  test("__complete completes built-in --format and --completions values", async () => {
-    const format = await runCli(createDemoCli(), ["__complete", "--format", ""]);
-    expect(format.stdout.split("\n").filter(Boolean)).toEqual(["pretty", "json"]);
+  test("__complete completes built-in --completions values", async () => {
     const completions = await runCli(createDemoCli(), ["__complete", "--completions", ""]);
     expect(completions.stdout.split("\n").filter(Boolean)).toEqual(["bash", "fish", "zsh"]);
   });
@@ -473,11 +506,326 @@ describe("context", () => {
     const r = await runJson(app, [], { env: { TOKEN: "secret" } });
     expect(r.json).toEqual({ token: "secret", host: "localhost" });
   });
+  test("hasStdin reflects piped stdin and stays hermetic in tests", async () => {
+    const app = cli.create("x", { run: ({ hasStdin }) => ({ hasStdin }) });
+    const piped = await runJson(app, [], { stdin: "hello" });
+    const interactive = await runJson(app, []);
+    expect(piped.json).toEqual({ hasStdin: true });
+    expect(interactive.json).toEqual({ hasStdin: false });
+  });
   test("isTTY reflects the terminal; isJSON reflects --json", async () => {
     const app = cli.create("x", { run: ({ isTTY, isJSON }) => ({ isTTY, isJSON }) });
     const nonTty = await runJson(app, []);
     const tty = await runJson(app, [], { isTTY: true });
     expect(nonTty.json).toEqual({ isTTY: false, isJSON: true });
     expect(tty.json).toEqual({ isTTY: true, isJSON: true });
+  });
+  test("handler console color codes are stripped when color is disabled", async () => {
+    const app = cli.create("x", { run: () => console.log("\u001B[32mok\u001B[0m") });
+    const plain = await runCli(app, [], { isTTY: true, env: { NO_COLOR: "1" } });
+    const colored = await runCli(app, [], { isTTY: true });
+    expect(plain.stdout).toBe("ok\n");
+    expect(colored.stdout).toBe("\u001B[32mok\u001B[0m\n");
+  });
+  test("stripping removes only complete SGR sequences", async () => {
+    const ESC = "\u001B";
+    const BEL = "\u0007";
+    const app = cli.create("x", {
+      run: () => {
+        console.log(`${ESC}[38;5;196mred${ESC}[m and ${ESC}[38:2:255:0:0mcolon${ESC}[0m`);
+        console.log(`cursor ${ESC}[1A up, erase ${ESC}[2K line`);
+        console.log(`link ${ESC}]8;;https://example.com${BEL}text${ESC}]8;;${BEL}`);
+        console.log("literal [32m brackets", { n: 1 });
+        console.log(`partial ${ESC}[32 stays`);
+        console.error(`${ESC}[31mfail${ESC}[0m`);
+      },
+    });
+    const r = await runCli(app, [], { isTTY: true, env: { NO_COLOR: "1" } });
+    expect(r.stdout).toContain("red and colon\n");
+    expect(r.stdout).toContain(`cursor ${ESC}[1A up, erase ${ESC}[2K line\n`);
+    expect(r.stdout).toContain(`link ${ESC}]8;;https://example.com${BEL}text${ESC}]8;;${BEL}\n`);
+    expect(r.stdout).toContain("literal [32m brackets { n: 1 }\n");
+    expect(r.stdout).toContain(`partial ${ESC}[32 stays\n`);
+    expect(r.stderr).toBe("fail\n");
+  });
+  test("no-color decision propagates to process.env.NO_COLOR only for real-env runs", async () => {
+    const savedNoColor = process.env.NO_COLOR;
+    const savedForceColor = process.env.FORCE_COLOR;
+    delete process.env.NO_COLOR;
+    delete process.env.FORCE_COLOR;
+    try {
+      let seenDuringRun: string | undefined = "unset";
+      const app = cli.create("x", {
+        run: () => {
+          seenDuringRun = process.env.NO_COLOR;
+        },
+      });
+      const serveOpts = { stdout: () => {}, stderr: () => {}, exit: () => {} };
+      // real process env (no env injected), non-TTY -> set during the run, restored after
+      await app.serve([], { ...serveOpts, isTTY: false });
+      expect<string | undefined>(seenDuringRun).toBe("1");
+      expect(process.env.NO_COLOR).toBeUndefined();
+      // color on -> untouched during the run
+      seenDuringRun = "unset";
+      await app.serve(["--color"], { ...serveOpts, isTTY: false });
+      expect<string | undefined>(seenDuringRun).toBeUndefined();
+      // injected env (testkit/embedders) -> real process env is never mutated
+      await runCli(app, [], { isTTY: false });
+      expect(process.env.NO_COLOR).toBeUndefined();
+    } finally {
+      if (savedNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = savedNoColor;
+      if (savedForceColor === undefined) delete process.env.FORCE_COLOR;
+      else process.env.FORCE_COLOR = savedForceColor;
+    }
+  });
+  test("shouldUseColor reflects the resolved color decision", async () => {
+    const app = cli.create("x", { run: ({ shouldUseColor }) => ({ shouldUseColor }) });
+    const ttyDefault = await runJson(app, [], { isTTY: true });
+    const noColorFlag = await runJson(app, ["--no-color"], { isTTY: true });
+    const noColorEnv = await runJson(app, [], { isTTY: true, env: { NO_COLOR: "1" } });
+    const forcedNonTty = await runJson(app, [], { isTTY: false, env: { FORCE_COLOR: "1" } });
+    expect(ttyDefault.json).toEqual({ shouldUseColor: true });
+    expect(noColorFlag.json).toEqual({ shouldUseColor: false });
+    expect(noColorEnv.json).toEqual({ shouldUseColor: false });
+    expect(forcedNonTty.json).toEqual({ shouldUseColor: true });
+  });
+});
+
+describe("serve error boundary", () => {
+  test("configuration errors reject serve(); handler errors are caught", async () => {
+    const bad = cli.create("x", {});
+    bad.command("list", { run: () => {} });
+    bad.command("other", { alias: "list", run: () => {} });
+    await awaitRejection(
+      expect(runCli(bad, [])).rejects.toThrow(
+        'alias "list" for command "other" conflicts with command "list"',
+      ),
+    );
+
+    const throwing = cli.create("x", {
+      run: () => {
+        throw new Error("boom");
+      },
+    });
+    const r = await runCli(throwing, []);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe("error: boom\n");
+  });
+  test("object-level refinements on options/env are rejected at startup; args refinements run", async () => {
+    const refinedOptions = cli.create("x", {
+      options: z.object({ a: z.string().optional() }).refine(() => true),
+      run: () => {},
+    });
+    await awaitRejection(
+      expect(runCli(refinedOptions, [])).rejects.toThrow(
+        'object-level refinements on options of "x" are not supported',
+      ),
+    );
+    const refinedEnv = cli.create("x", {
+      env: z.object({ A: z.string().optional() }).refine(() => true),
+      run: () => {},
+    });
+    await awaitRejection(
+      expect(runCli(refinedEnv, [])).rejects.toThrow('object-level refinements on env of "x"'),
+    );
+    const refinedArgs = cli.create("x", {
+      args: z.object({ when: z.string() }).refine((a) => a.when !== "banana", "no bananas"),
+      run: ({ args }) => args,
+    });
+    const good = await runJson(refinedArgs, ["apple"]);
+    expect(good.json).toEqual({ when: "apple" });
+    const bad = await runJson(refinedArgs, ["banana"]);
+    expect(bad.exitCode).toBe(2);
+    expect(expectCommandErrorResult(bad.json).error.message).toContain("no bananas");
+  });
+  test("isGunsmithError duck-check requires the error-family shape, not just the name", () => {
+    expect(isGunsmithError(new UsageError("x"))).toBe(true);
+    expect(isGunsmithError({ name: "GunsmithError", code: "VALIDATION", message: "m" })).toBe(true);
+    expect(isGunsmithError({ name: "UsageError", code: "USAGE", message: "m" })).toBe(true);
+    expect(isGunsmithError({ name: "UsageError", message: "foreign class, no code" })).toBe(false);
+  });
+});
+
+describe("json output contract", () => {
+  test("success emits raw data on stdout; failure emits the envelope on stdout, not stderr", async () => {
+    const app = cli.create("x", {
+      options: z.object({ fail: z.boolean().default(false) }),
+      run: ({ options }) => {
+        if (options.fail) throw new Error("boom");
+        return { value: 1 };
+      },
+    });
+    const success = await runCli(app, ["--json"]);
+    expect(success.stdout).toBe('{"value":1}\n');
+    expect(success.stderr).toBe("");
+    expect(success.exitCode).toBe(0);
+    const failure = await runCli(app, ["--fail", "--json"]);
+    expect(failure.stdout).toBe('{"ok":false,"error":{"code":"UNKNOWN","message":"boom"}}\n');
+    expect(failure.stderr).toBe("");
+    expect(failure.exitCode).toBe(1);
+  });
+});
+
+describe("exit-code model", () => {
+  test("serve resolves with the exit code and reports it to the exit callback once", async () => {
+    const app = cli.create("x", {
+      options: z.object({ fail: z.boolean().default(false) }),
+      run: ({ options }) => {
+        if (options.fail) throw new Error("boom");
+      },
+    });
+    const codes: number[] = [];
+    const opts = {
+      stdout: () => {},
+      stderr: () => {},
+      env: {},
+      isTTY: false,
+      exit: (code: number) => void codes.push(code),
+    };
+    expect(await app.serve([], opts)).toBe(0);
+    expect(await app.serve(["--fail"], opts)).toBe(1);
+    expect(await app.serve(["--nope"], opts)).toBe(2);
+    expect(await app.serve(["--help"], opts)).toBe(0);
+    expect(await app.serve(["--version"], opts)).toBe(0);
+    expect(codes).toEqual([0, 1, 2, 0, 0]);
+  });
+  test("default exit records nonzero codes and never clobbers a handler-set process.exitCode", async () => {
+    const saved = process.exitCode;
+    const io = { stdout: () => {}, stderr: () => {}, env: {}, isTTY: false };
+    try {
+      process.exitCode = undefined;
+      const doctor = cli.create("x", {
+        run: () => {
+          process.exitCode = 3;
+        },
+      });
+      expect(await doctor.serve([], io)).toBe(3);
+      expect<number | string | undefined>(process.exitCode).toBe(3);
+
+      process.exitCode = undefined;
+      const failing = cli.create("x", {
+        run: () => {
+          throw new Error("boom");
+        },
+      });
+      expect(await failing.serve([], io)).toBe(1);
+      expect<number | string | undefined>(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = saved ?? 0;
+    }
+  });
+  test("handler-set process.exitCode surfaces in the resolved code and testkit exitCode", async () => {
+    const saved = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      const app = cli.create("x", {
+        run: () => {
+          process.exitCode = 1;
+        },
+      });
+      const r = await runCli(app, []);
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toBe("");
+    } finally {
+      process.exitCode = saved ?? 0;
+    }
+  });
+});
+
+describe("global flags control", () => {
+  test("-v prints the version", async () => {
+    const r = await runCli(createDemoCli(), ["-v"]);
+    expect(r.stdout).toBe("1.2.3\n");
+    expect(r.exitCode).toBe(0);
+  });
+  test("a user option alias v shadows the built-in -v", async () => {
+    const app = cli.create("x", {
+      version: "9.9.9",
+      options: z.object({ verbose: z.boolean().default(false).meta({ alias: "v" }) }),
+      run: ({ options }) => ({ verbose: options.verbose }),
+    });
+    const r = await runJson(app, ["-v"]);
+    expect(r.json).toEqual({ verbose: true });
+  });
+  test("per-command features.json=false rejects --json for that subtree only", async () => {
+    const app = cli.create("x", { run: () => ({ root: true }) });
+    app.command("tui", { features: { json: false }, run: () => ({ tui: true }) });
+    app.command("list", { run: () => ({ list: true }) });
+    const disabled = await runCli(app, ["tui", "--json"]);
+    expect(disabled.exitCode).toBe(2);
+    expect(disabled.stderr).toContain('unknown option "--json"');
+    const rootJson = await runJson(app, []);
+    expect(rootJson.json).toEqual({ root: true });
+    const sibling = await runJson(app, ["list"]);
+    expect(sibling.json).toEqual({ list: true });
+    const help = await runCli(app, ["tui", "--help"], { isTTY: true, env: { NO_COLOR: "1" } });
+    expect(help.stdout).not.toContain("--json");
+    const complete = await runCli(app, ["__complete", "tui", "-"]);
+    expect(complete.stdout).toContain("--help");
+    expect(complete.stdout).not.toContain("--json");
+  });
+});
+
+describe("inheritOptions", () => {
+  const createApp = () => {
+    const app = cli.create("x", {
+      options: z.object({ port: z.coerce.number().default(3000) }),
+      env: z.object({ HOST: z.string().default("localhost") }),
+    });
+    app.command("isolated", {
+      inheritOptions: false,
+      options: z.object({ out: z.string().default("dist") }),
+      run: ({ options, env }) => ({ options, env }),
+    });
+    app.command("inheriting", {
+      run: ({ options }) => ({ options }),
+    });
+    return app;
+  };
+  test("a non-inheriting child rejects parent options as unknown", async () => {
+    const r = await runCli(createApp(), ["isolated", "--port", "4000"]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('unknown option "--port"');
+  });
+  test("env still inherits when options do not", async () => {
+    const r = await runJson(createApp(), ["isolated"], { env: { HOST: "h" } });
+    expect(r.json).toEqual({ options: { out: "dist" }, env: { HOST: "h" } });
+  });
+  test("siblings keep inheriting", async () => {
+    const r = await runJson(createApp(), ["inheriting", "--port", "4000"]);
+    expect(r.json).toEqual({ options: { port: 4000 } });
+  });
+  test("a non-inheriting child may reuse a parent option name", async () => {
+    const app = cli.create("x", { options: z.object({ format: z.string().default("a") }) });
+    app.command("own", {
+      inheritOptions: false,
+      options: z.object({ format: z.enum(["md", "html"]).default("md") }),
+      run: ({ options }) => options,
+    });
+    const r = await runJson(app, ["own", "--format", "html"]);
+    expect(r.json).toEqual({ format: "html" });
+  });
+  test("a grandchild inherits from the opt-out node down", async () => {
+    const app = cli.create("x", { options: z.object({ root: z.boolean().default(false) }) });
+    const mid = cli.command("mid", {
+      inheritOptions: false,
+      options: z.object({ midOpt: z.boolean().default(false) }),
+    });
+    mid.command("leaf", { run: ({ options }) => options });
+    app.command(mid);
+    const ok = await runJson(app, ["mid", "leaf", "--mid-opt"]);
+    expect(ok.json).toEqual({ midOpt: true });
+    const bad = await runCli(app, ["mid", "leaf", "--root"]);
+    expect(bad.exitCode).toBe(2);
+    expect(bad.stderr).toContain('unknown option "--root"');
+  });
+  test("help omits parent options for a non-inheriting child", async () => {
+    const help = await runCli(createApp(), ["isolated", "--help"], {
+      isTTY: true,
+      env: { NO_COLOR: "1" },
+    });
+    expect(help.stdout).toContain("--out");
+    expect(help.stdout).not.toContain("--port");
   });
 });

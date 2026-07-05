@@ -1,6 +1,5 @@
 import type { makePaint } from "./color";
 
-export const renderError = (code: string, message: string, paint: ReturnType<typeof makePaint>) => {
-  const prefix = `error (${code}):`;
-  return `${paint(prefix, "red", "bold")} ${message}\n`;
+export const renderError = (message: string, paint: ReturnType<typeof makePaint>) => {
+  return `${paint("error:", "red", "bold")} ${message}\n`;
 };

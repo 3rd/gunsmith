@@ -1,5 +1,6 @@
 import type {
   AnyCommandDefinition,
+  CliFeatures,
   CommandChildMatch,
   CommandEntry,
   CommandFeatures,
@@ -7,7 +8,7 @@ import type {
 } from "../types/commands";
 import { isLongFlagToken } from "../flags/tokenizer";
 import { mergeObjects } from "../schemas/object";
-import { getAlias, getField, getShapeKeys } from "../schemas/zod";
+import { getAlias, getField, getShapeKeys, hasObjectChecks } from "../schemas/zod";
 
 const isValidCommandName = (name: string) =>
   name.length > 0 && !isLongFlagToken(name) && name !== "--" && name !== "__complete";
@@ -22,11 +23,23 @@ const findOptionAliasIssue = (node: CommandNode): string | undefined => {
       return `invalid alias "${alias}" for option "${key}" of "${node.name}"; aliases must be a single letter`;
     }
     const existing = seen.get(alias);
-    if (existing) return `alias "${alias}" for option "${key}" of "${node.name}" conflicts with option "${existing}"`;
+    if (existing) {
+      return `alias "${alias}" for option "${key}" of "${node.name}" conflicts with option "${existing}"`;
+    }
     seen.set(alias, key);
   }
   return undefined;
 };
+// merged options/env are rebuilt from shapes, which would silently drop object-level checks
+const findObjectRefinementIssue = (node: CommandNode): string | undefined => {
+  for (const part of ["options", "env"] as const) {
+    if (hasObjectChecks(node.def[part])) {
+      return `object-level refinements on ${part} of "${node.name}" are not supported; validate cross-field rules in run()`;
+    }
+  }
+  return undefined;
+};
+
 const commandTreeIssueCache = new WeakMap<CommandNode, string | undefined>();
 const commandChildrenMap = new WeakMap<CommandNode, Map<string, CommandNode>>();
 const emptyCommandChildren: ReadonlyMap<string, CommandNode> = new Map();
@@ -36,6 +49,12 @@ export const getCommandAliases = (def: AnyCommandDefinition) =>
 
 export const isCommandSurfaceDisabled = (chain: readonly CommandNode[], surface: keyof CommandFeatures) =>
   chain.some((node) => node.def.features?.[surface] === false);
+
+export const getEffectiveCliFeatures = (
+  features: Required<CliFeatures>,
+  chain: readonly CommandNode[],
+): Required<CliFeatures> =>
+  features.json && isCommandSurfaceDisabled(chain, "json") ? { ...features, json: false } : features;
 
 export const clearCommandTreeIssueCache = (root: CommandNode) => {
   commandTreeIssueCache.delete(root);
@@ -64,6 +83,8 @@ export const findCommandTreeIssue = (root: CommandNode) => {
   const walk = (node: CommandNode): string | undefined => {
     const optionAliasIssue = findOptionAliasIssue(node);
     if (optionAliasIssue) return optionAliasIssue;
+    const refinementIssue = findObjectRefinementIssue(node);
+    if (refinementIssue) return refinementIssue;
     const owner = node.name;
     const seen = new Map<string, string>();
     const children = getCommandChildren(node);
@@ -121,9 +142,13 @@ export const getCommandChain = (root: CommandNode, commandPath: string[]): Comma
 export const getEffectiveCommandDefinition = (chain: CommandNode[]): AnyCommandDefinition => {
   const node = chain[chain.length - 1];
   if (!node) return {};
+  const optionsStart = Math.max(
+    0,
+    chain.findLastIndex((n) => n.def.inheritOptions === false),
+  );
   return {
     ...node.def,
-    options: mergeObjects(chain.map((n) => n.def.options)),
+    options: mergeObjects(chain.slice(optionsStart).map((n) => n.def.options)),
     env: mergeObjects(chain.map((n) => n.def.env)),
   };
 };

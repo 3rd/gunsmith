@@ -46,6 +46,7 @@ The examples are grouped by what you are trying to learn. Start with basics, the
 | [`integrations/schema.ts`](./integrations/schema.ts)     | `bun run examples/integrations/schema.ts report --schema`               | input/output schema discovery     |
 | [`integrations/features.ts`](./integrations/features.ts) | `bun run examples/integrations/features.ts --help`                      | disabling optional built-in flags |
 | [`integrations/errors.ts`](./integrations/errors.ts)     | `bun run examples/integrations/errors.ts publish --channel next --json` | plain thrown errors               |
+| [`integrations/doctor.ts`](./integrations/doctor.ts)     | `bun run examples/integrations/doctor.ts check; echo $?`                 | nonzero exit without an error line |
 
 ## Testing
 

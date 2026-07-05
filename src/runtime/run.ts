@@ -2,7 +2,7 @@ import type { AnyCommandDefinition, OutputValidationMode } from "../types/comman
 import type { CommandRunContext, CommandRunResult } from "../types/execution";
 import { getExitCodeForError, isGunsmithError } from "../errors";
 import { parseOutputSchema } from "../schemas/validate";
-import { suppressedConsole, withConsoleCapture } from "./console";
+import { createColorStrippingConsole, suppressedConsole, withConsoleCapture } from "./console";
 
 const shouldValidateOutput = (mode: OutputValidationMode | undefined, nodeEnv: string | undefined) => {
   const resolved = mode ?? "development";
@@ -50,5 +50,7 @@ export const runCommand = async (
     }
   };
 
-  return opts.suppressConsole ? withConsoleCapture(suppressedConsole, run) : run();
+  if (opts.suppressConsole) return withConsoleCapture(suppressedConsole, run);
+  if (!baseContext.shouldUseColor) return withConsoleCapture(createColorStrippingConsole(), run);
+  return run();
 };

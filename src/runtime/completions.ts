@@ -1,22 +1,17 @@
 import type { z } from "zod";
 import type { Cli } from "../create";
 import type { FlagModel, GlobalFlag } from "../types/flags";
-import { getCommandAliases, getCommandChildren } from "../command/tree";
-import { getActiveGlobalFlags } from "../flags/globals";
+import { getCommandAliases, getCommandChildren, getEffectiveCliFeatures } from "../command/tree";
+import { COMPLETION_SHELLS, getActiveGlobalFlags } from "../flags/globals";
 import { buildFlagModel, getEffectiveAliasOwners } from "../flags/model";
 import { getAlias, getDescription, getEnumValues, getField, getShapeKeys, toKebabCase } from "../schemas/zod";
 import { resolveInvocation } from "./argv";
 
-export const COMPLETION_SHELLS = ["bash", "fish", "zsh"] as const;
+export { COMPLETION_SHELLS };
 export type CompletionShell = (typeof COMPLETION_SHELLS)[number];
 
 export const isCompletionShell = (value: unknown): value is CompletionShell =>
   COMPLETION_SHELLS.includes(value as CompletionShell);
-
-const GLOBAL_VALUE_COMPLETIONS: Partial<Record<string, readonly string[]>> = {
-  completions: COMPLETION_SHELLS,
-  format: ["pretty", "json"],
-};
 
 const toCandidateLine = (name: string, description?: string) =>
   description ? `${name}\t${description}` : name;
@@ -63,13 +58,14 @@ export const getCompletionCandidates = (root: Cli, tokens: string[]): string[] =
   if (prior.includes("--")) return [];
 
   const invocation = resolveInvocation(root, prior);
-  const globals = getActiveGlobalFlags(invocation.input.optionKeys, root.features);
+  const features = getEffectiveCliFeatures(root.features, invocation.chain);
+  const globals = getActiveGlobalFlags(invocation.input.optionKeys, features);
   const model = buildFlagModel(invocation.input.options, globals);
 
   const valueFlag = readValueFlagName(prior.at(-1), model);
   if (valueFlag) {
-    const preset = GLOBAL_VALUE_COMPLETIONS[valueFlag];
-    if (preset && globals.some((flag) => flag.name === valueFlag)) return [...preset];
+    const preset = globals.find((flag) => flag.name === valueFlag)?.values;
+    if (preset) return [...preset];
     return getEnumValues(getField(invocation.input.options, valueFlag)) ?? [];
   }
 
@@ -79,16 +75,18 @@ export const getCompletionCandidates = (root: Cli, tokens: string[]): string[] =
   for (const [name, child] of getCommandChildren(invocation.node)) {
     if (child.def.hidden) continue;
     lines.push(toCandidateLine(name, child.def.description));
-    for (const alias of getCommandAliases(child.def)) lines.push(toCandidateLine(alias, child.def.description));
+    for (const alias of getCommandAliases(child.def)) {
+      lines.push(toCandidateLine(alias, child.def.description));
+    }
   }
   return lines;
 };
 
-const SAFE_BIN_NAME = /^[A-Za-z0-9][A-Za-z0-9_.+-]*$/;
+const SAFE_BIN_NAME = /^[\dA-Za-z][\w+.-]*$/;
 
 export const isCompletionSafeBinName = (name: string) => SAFE_BIN_NAME.test(name);
 
-const sanitizeIdentifier = (name: string) => name.replace(/[^A-Za-z0-9_]/g, "_");
+const sanitizeIdentifier = (name: string) => name.replace(/\W/g, "_");
 
 const renderBashScript = (bin: string, fn: string) => `${fn}() {
     local cur candidates

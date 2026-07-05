@@ -3,6 +3,7 @@ export interface GlobalFlag {
   bool: boolean;
   description: string;
   alias?: string;
+  values?: readonly string[];
 }
 
 export interface FlagModel {

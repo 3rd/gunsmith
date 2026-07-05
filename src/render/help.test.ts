@@ -34,12 +34,51 @@ describe("--help rendering", () => {
     expect(o).toContain("Usage: demo greet [options] <name> [extra...]");
     expect(o).toContain("Greet someone");
     expect(o).toContain("name <string>  who to greet");
-    expect(o).toContain("extra <array>");
+    expect(o).toContain("extra <string...>");
     expect(o).toContain("--loud  shout");
     expect(o).toContain("# shout");
     expect(o).toContain("demo greet Ada --loud");
     // global-options block derives from GLOBALS (single source)
     expect(o).toContain("--color / --no-color");
+    expect(o).toContain("--completions <bash|fish|zsh>  print a shell completion script");
+  });
+
+  test("enum options list every value; array options show the element type", async () => {
+    const app = cli.create("x", {
+      options: z.object({
+        state: z.enum(["open", "closed", "all", "draft", "merged"]).default("open").describe("filter"),
+        tag: z.array(z.string()).optional(),
+        pick: z.array(z.enum(["a", "b"])).optional(),
+      }),
+      run: () => {},
+    });
+    const r = await runCli(app, ["--help"], noColor);
+    expect(r.stdout).toContain("--state <open|closed|all|draft|merged>  filter");
+    expect(r.stdout).toContain("--tag <string...>");
+    expect(r.stdout).toContain("--pick <a|b...>");
+  });
+
+  test("a runnable root with subcommands renders [command]", async () => {
+    const app = cli.create("x", { run: () => {} });
+    app.command("sub", { run: () => {} });
+    const r = await runCli(app, ["--help"], noColor);
+    expect(r.stdout).toContain("Usage: x [command]");
+  });
+
+  test("rest and notes render in help", async () => {
+    const app = cli.create("rem", {
+      args: z.object({ when: z.string() }),
+      rest: { description: "raw reminder text, taken verbatim" },
+      notes: "Shorthands: 30 = minutes from now; :45 = next occurrence.",
+      examples: [{ command: "rem 20m -- prepare for work" }],
+      run: () => {},
+    });
+    const r = await runCli(app, ["--help"], noColor);
+    expect(r.stdout).toContain("Usage: rem <when> [-- <args...>]");
+    expect(r.stdout).toContain("-- <args...>  raw reminder text, taken verbatim");
+    const notesIndex = r.stdout.indexOf("Shorthands:");
+    expect(notesIndex).toBeGreaterThan(r.stdout.indexOf("rem 20m -- prepare for work"));
+    expect(notesIndex).toBeLessThan(r.stdout.indexOf("Global options:"));
   });
 
   test("parent command lists non-hidden subcommands only", async () => {
@@ -143,6 +182,19 @@ describe("--schema", () => {
     };
     expect(Object.keys(js.input.properties).sort()).toEqual(["force", "path"]);
     expect(Object.keys(js.output.properties).sort()).toEqual(["ok"]);
+  });
+
+  test("marks defaulted options optional with defaults in the input schema", async () => {
+    const a = cli.create("svc", {
+      options: z.object({ loud: z.boolean().default(false), name: z.string() }),
+      run: () => {},
+    });
+    const r = await runCli(a, ["--schema"]);
+    const js = JSON.parse(r.stdout) as {
+      input: { required?: string[]; properties: Record<string, { default?: unknown }> };
+    };
+    expect(js.input.required).toEqual(["name"]);
+    expect(js.input.properties.loud?.default).toBe(false);
   });
 
   test("rejects duplicate fields across args/options", async () => {

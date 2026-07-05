@@ -15,6 +15,6 @@
     "noImplicitOverride": true,
     "types": ["node", "bun"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "examples/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }
