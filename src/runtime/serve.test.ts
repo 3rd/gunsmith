@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import type { CommandErrorResult } from "../types/result";
 import { GunsmithError, isGunsmithError, UsageError } from "../errors";
-import cli from "../index";
+import cli, { CommandError } from "../index";
 import { runCli, runJson } from "../testing/testkit";
 
 const expectCommandErrorResult = (json: unknown): CommandErrorResult => {
@@ -12,6 +12,12 @@ const expectCommandErrorResult = (json: unknown): CommandErrorResult => {
 
 // bun-types declare .rejects matchers as void; at runtime they return a promise
 const awaitRejection = (assertion: void) => assertion as unknown as Promise<void>;
+
+const waitForAbort = (signal: AbortSignal) => {
+  return new Promise<void>((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+};
 
 const createGreetCli = () =>
   cli.create("greet", {
@@ -251,6 +257,41 @@ describe("exit codes", () => {
       code: "USAGE",
       message: "--duration requires --record",
     });
+  });
+  test("thrown CommandError -> its own code in the envelope and the exit code it chose", async () => {
+    const refusing = cli.create("x", {
+      run: () => {
+        throw new CommandError("scope-refused", "target is outside scope");
+      },
+    });
+    const refused = await runJson(refusing, []);
+    expect(refused.exitCode).toBe(1);
+    expect(expectCommandErrorResult(refused.json).error).toEqual({
+      code: "scope-refused",
+      message: "target is outside scope",
+    });
+
+    const outdating = cli.create("x", {
+      run: () => {
+        throw new CommandError("selection-outdated", "selection changed", { exitCode: 2 });
+      },
+    });
+    const outdated = await runJson(outdating, []);
+    expect(outdated.exitCode).toBe(2);
+  });
+  test("thrown CommandError from another copy of gunsmith -> keeps its exit code", async () => {
+    const foreign = Object.assign(new Error("target is outside scope"), {
+      name: "CommandError",
+      code: "scope-refused",
+      exitCode: 2,
+    });
+    const app = cli.create("x", {
+      run: () => {
+        throw foreign;
+      },
+    });
+    const r = await runJson(app, []);
+    expect(r.exitCode).toBe(2);
   });
   test("multi-line error messages render verbatim", async () => {
     const app = cli.create("x", {
@@ -803,6 +844,119 @@ describe("exit-code model", () => {
     } finally {
       process.exitCode = saved ?? 0;
     }
+  });
+});
+
+describe("cancellation and progress", () => {
+  test("aborting the run's signal aborts the handler's signal while it runs", async () => {
+    const { promise: started, resolve: markStarted } = Promise.withResolvers<void>();
+    const app = cli.create("x", {
+      run: async ({ signal }) => {
+        markStarted();
+        await waitForAbort(signal);
+
+        return { outcome: "cancelled" };
+      },
+    });
+    const controller = new AbortController();
+    const run = runJson(app, [], { signal: controller.signal });
+
+    await started;
+    controller.abort();
+    expect((await run).json).toEqual({ outcome: "cancelled" });
+  });
+  test("with interrupt: abort, SIGINT aborts the handler's signal instead of ending the run", async () => {
+    const baselineListenerCount = process.listenerCount("SIGINT");
+    const { promise: started, resolve: markStarted } = Promise.withResolvers<void>();
+    const app = cli.create("x", {
+      interrupt: "abort",
+      run: async ({ signal }) => {
+        markStarted();
+        await waitForAbort(signal);
+
+        return { outcome: "cancelled" };
+      },
+    });
+
+    const outputs: string[] = [];
+    const run = app.serve(["--json"], {
+      stdout: (value) => {
+        outputs.push(value);
+      },
+      stderr: () => {},
+      exit: () => {},
+      env: {},
+      isTTY: false,
+    });
+
+    await started;
+    process.emit("SIGINT");
+    expect(await run).toBe(0);
+    expect(outputs.join("")).toBe('{"outcome":"cancelled"}\n');
+    expect(process.listenerCount("SIGINT")).toBe(baselineListenerCount);
+  });
+  test("SIGINT keeps Node's default unless the command opts in and no signal is passed", async () => {
+    const baselineListenerCount = process.listenerCount("SIGINT");
+    const listenerCounts: number[] = [];
+
+    const recordListenerCount = () => {
+      listenerCounts.push(process.listenerCount("SIGINT"));
+    };
+
+    const plain = cli.create("x", { run: recordListenerCount });
+    const abortable = cli.create("x", { interrupt: "abort", run: recordListenerCount });
+    await plain.serve([], { stdout: () => {}, stderr: () => {}, exit: () => {}, env: {}, isTTY: false });
+    await runCli(abortable, []);
+    expect(listenerCounts).toEqual([baselineListenerCount, baselineListenerCount]);
+  });
+  test("progress updates reach the test result in order", async () => {
+    const app = cli.create("x", {
+      run: ({ reportProgress }) => {
+        reportProgress({ progress: 1, total: 3, message: "resolving" });
+        reportProgress({ progress: 2 });
+      },
+    });
+    const r = await runJson(app, []);
+    expect(r.progress).toEqual([{ progress: 1, total: 3, message: "resolving" }, { progress: 2 }]);
+  });
+  test("a progress value that does not increase fails the run", async () => {
+    const app = cli.create("x", {
+      run: ({ reportProgress }) => {
+        reportProgress({ progress: 2 });
+        reportProgress({ progress: 2 });
+      },
+    });
+    const r = await runJson(app, []);
+    expect(r.exitCode).toBe(1);
+    expect(expectCommandErrorResult(r.json).error.message).toBe(
+      "progress must increase with each update, received 2 after 2",
+    );
+    expect(r.progress).toEqual([{ progress: 2 }]);
+  });
+  test("a progress or total that is not a finite number fails the run", async () => {
+    const nanProgress = cli.create("x", {
+      run: ({ reportProgress }) => {
+        reportProgress({ progress: Number.NaN });
+      },
+    });
+    const nan = await runJson(nanProgress, []);
+    expect(nan.exitCode).toBe(1);
+    expect(expectCommandErrorResult(nan.json).error.message).toBe(
+      "progress must be a finite number, received NaN",
+    );
+    expect(nan.progress).toEqual([]);
+
+    const infiniteTotal = cli.create("x", {
+      run: ({ reportProgress }) => {
+        reportProgress({ progress: 1, total: Number.POSITIVE_INFINITY });
+      },
+    });
+    const infinite = await runJson(infiniteTotal, []);
+    expect(infinite.exitCode).toBe(1);
+    expect(expectCommandErrorResult(infinite.json).error.message).toBe(
+      "progress total must be a finite number, received Infinity",
+    );
+    expect(infinite.progress).toEqual([]);
   });
 });
 

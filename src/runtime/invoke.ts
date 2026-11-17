@@ -1,9 +1,10 @@
-import type { AnyCommandDefinition } from "../types/commands";
+import type { AnyCommandDefinition, ProgressUpdate } from "../types/commands";
 import type { CommandInputValues, CommandInvocationResult, CommandRunResult } from "../types/execution";
 import type { InputModel } from "../types/input";
 import { getExitCodeForError, type GunsmithError, isGunsmithError } from "../errors";
 import { createErrorResult, createSuccessResult } from "../render/result";
 import { validateAll } from "../schemas/validate";
+import { createProgressReporter } from "./progress";
 import { runCommand } from "./run";
 
 type InvokeCommandParams = {
@@ -17,6 +18,8 @@ type InvokeCommandParams = {
   hasStdin: boolean;
   rest: string[];
   readStdin: () => Promise<string>;
+  signal: AbortSignal;
+  onProgress?: (update: ProgressUpdate) => void;
   suppressConsole: boolean;
   debug?: (message: string) => void;
   nodeEnv?: string;
@@ -79,6 +82,8 @@ export const invokeCommand = async (params: InvokeCommandParams): Promise<Comman
     hasStdin,
     rest,
     readStdin,
+    signal,
+    onProgress,
     suppressConsole,
     debug,
     nodeEnv,
@@ -100,6 +105,8 @@ export const invokeCommand = async (params: InvokeCommandParams): Promise<Comman
       hasStdin,
       rest,
       readStdin,
+      signal,
+      reportProgress: createProgressReporter(onProgress),
     },
     { suppressConsole, debug, nodeEnv },
   );

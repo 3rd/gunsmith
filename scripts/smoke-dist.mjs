@@ -51,6 +51,7 @@ assert.equal(publicCore.command, publicCore.default.command);
 assert.equal(typeof publicCore.Cli, "function");
 assert.equal(typeof publicCore.GunsmithError, "function");
 assert.equal(typeof publicCore.UsageError, "function");
+assert.equal(typeof publicCore.CommandError, "function");
 assert.equal(typeof publicCore.isGunsmithError, "function");
 
 const publicTesting = await import("gunsmith/testing");
@@ -70,6 +71,7 @@ assert.equal(typeof packageCjs.default.create, "function");
 assert.equal(typeof packageCjs.Cli, "function");
 assert.equal(typeof packageCjs.GunsmithError, "function");
 assert.equal(typeof packageCjs.UsageError, "function");
+assert.equal(typeof packageCjs.CommandError, "function");
 assert.equal(typeof packageCjs.isGunsmithError, "function");
 
 const testingCjs = require("gunsmith/testing");

@@ -1,4 +1,4 @@
-import type { CommandContextValue } from "./commands";
+import type { CommandContextValue, ProgressUpdate } from "./commands";
 import type { CommandErrorResult, CommandSuccessResult } from "./result";
 
 export interface ServeOptions {
@@ -16,6 +16,14 @@ export interface ServeOptions {
   isTTY?: boolean;
   hasStdin?: boolean;
   format?: "json" | "pretty";
+  /**
+   * Cancels a command run: aborting it aborts the handler's `signal`. When set, the caller owns
+   * cancellation and gunsmith leaves SIGINT and SIGTERM alone during the run, whatever the
+   * command's `interrupt`. The `--mcp` server ignores it; MCP clients cancel their own calls.
+   */
+  signal?: AbortSignal;
+  /** Receives each `reportProgress` update. Default: updates are discarded, as on a terminal. */
+  onProgress?: (update: ProgressUpdate) => void;
 }
 
 export type CommandRunContext = CommandContextValue<unknown, unknown, unknown>;

@@ -1,12 +1,14 @@
 import cli, { Cli } from "./create";
-export { GunsmithError, isGunsmithError, UsageError } from "./errors";
+export { CommandError, GunsmithError, isGunsmithError, UsageError } from "./errors";
 export type {
   AppDefinition,
   CliFeatures,
   CommandDefinition,
   CommandFeatures,
   Context,
+  McpToolAnnotations,
   OutputValidationMode,
+  ProgressUpdate,
 } from "./types/commands";
 export type { ServeOptions } from "./types/execution";
 export type { CommandErrorResult, CommandResult, CommandSuccessResult } from "./types/result";

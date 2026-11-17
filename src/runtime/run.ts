@@ -1,6 +1,6 @@
 import type { AnyCommandDefinition, OutputValidationMode } from "../types/commands";
 import type { CommandRunContext, CommandRunResult } from "../types/execution";
-import { getExitCodeForError, isGunsmithError } from "../errors";
+import { getExitCodeForError, isCommandError, isGunsmithError } from "../errors";
 import { parseOutputSchema } from "../schemas/validate";
 import { createColorStrippingConsole, suppressedConsole, withConsoleCapture } from "./console";
 
@@ -28,6 +28,11 @@ const createThrownErrorResult = (error: unknown, debug?: (message: string) => vo
       exitCode: getExitCodeForError(error.code),
     };
   }
+
+  if (isCommandError(error)) {
+    return { ok: false, error: { code: error.code, message: error.message }, exitCode: error.exitCode };
+  }
+
   return createUnknownErrorResult(error, debug);
 };
 

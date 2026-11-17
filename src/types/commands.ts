@@ -12,6 +12,12 @@ type CommandRunReturn<Schema extends z.ZodType | undefined> =
 
 export type OutputValidationMode = "development" | boolean;
 
+export interface ProgressUpdate {
+  progress: number;
+  total?: number;
+  message?: string;
+}
+
 export interface CommandContextValue<Args, Options, Env> {
   name: string;
   args: Args;
@@ -23,6 +29,8 @@ export interface CommandContextValue<Args, Options, Env> {
   hasStdin: boolean;
   rest: string[];
   readStdin: () => Promise<string>;
+  signal: AbortSignal;
+  reportProgress: (update: ProgressUpdate) => void;
 }
 
 export type Context<
@@ -49,6 +57,13 @@ export interface CommandFeatures {
   json?: boolean;
 }
 
+export interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export interface CommandDefinition<
   ArgsSchema extends z.ZodObject<z.ZodRawShape> | undefined = undefined,
   OptionsSchema extends z.ZodObject<z.ZodRawShape> | undefined = undefined,
@@ -70,6 +85,16 @@ export interface CommandDefinition<
   version?: string;
   hidden?: boolean;
   features?: CommandFeatures;
+  /**
+   * What SIGINT and SIGTERM do while this command's handler runs from `serve()` on a terminal.
+   * `"exit"` (default) keeps Node's behavior: the process terminates. `"abort"` aborts the
+   * handler's `signal` instead and keeps the process alive until the handler returns; later
+   * signals are ignored. Ignored when `serve()` receives a `signal` option. In the `--mcp` server,
+   * any tool whose command has `"abort"` makes SIGINT and SIGTERM close the server instead, which
+   * aborts every in-flight call, and the server stops once those calls return.
+   */
+  interrupt?: "abort" | "exit";
+  annotations?: McpToolAnnotations;
   help?: ((generatedHelp: string) => string) | string;
   run?: (context: HandlerContext) => CommandRunReturn<OutputSchema>;
 }

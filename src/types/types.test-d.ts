@@ -116,6 +116,23 @@ cli.create("bad-output-validation", {
   run: () => ({ clean: true }),
 });
 
+// every handler context carries a cancellation signal and a progress reporter
+cli.create("long-running", {
+  interrupt: "abort",
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  run: (c) => {
+    const _signal: AbortSignal = c.signal;
+    c.reportProgress({ progress: 1, total: 2, message: "halfway" });
+
+    return _signal.aborted;
+  },
+});
+
+cli.create("bad-interrupt", {
+  // @ts-expect-error interrupt accepts "abort" or "exit"
+  interrupt: "ignore",
+});
+
 // .command() infers on subcommands
 cli.create("app").command("sub", {
   options: z.object({ verbose: z.boolean().default(false) }),

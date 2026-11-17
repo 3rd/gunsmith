@@ -1,3 +1,4 @@
+import type { ProgressUpdate } from "./commands";
 import type { CommandErrorResult } from "./result";
 
 export type TestJsonValue<T = unknown> = CommandErrorResult | T;
@@ -7,6 +8,8 @@ export interface TestRunResult<T = unknown> {
   stderr: string;
   exitCode: number;
   json: TestJsonValue<T> | undefined;
+  /** Every `reportProgress` update in order; recorded even though a real terminal discards them. */
+  progress: ProgressUpdate[];
 }
 
 export interface TestJsonRunResult<T = unknown> extends TestRunResult<T> {
@@ -27,4 +30,9 @@ export interface TestRunOptions {
    * becomes `true`. Omitted means no piped stdin (`ctx.hasStdin` is `false`).
    */
   stdin?: string;
+  /**
+   * Aborting it aborts the command's `ctx.signal` mid-run, as Ctrl+C does for a command with
+   * `interrupt: "abort"`. The run still resolves only after the handler returns.
+   */
+  signal?: AbortSignal;
 }

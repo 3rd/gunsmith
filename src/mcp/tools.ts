@@ -1,6 +1,6 @@
 import type { Cli } from "../create";
-import type { AnyCommandDefinition, CommandNode } from "../types/commands";
-import type { McpRuntimeOptions, McpToolDefinition, McpToolResult } from "../types/mcp";
+import type { AnyCommandDefinition, CommandNode, ProgressUpdate } from "../types/commands";
+import type { McpInvokeOptions, McpToolDefinition, McpToolResult } from "../types/mcp";
 import type { CommandResult } from "../types/result";
 import { collectCommandEntries, findCommandTreeIssue, isCommandSurfaceDisabled } from "../command/tree";
 import { GunsmithError, isGunsmithError } from "../errors";
@@ -17,6 +17,8 @@ import { toJsonSchema } from "../schemas/object";
 
 interface ResolvedMcpRuntimeOptions {
   env: Record<string, string | undefined>;
+  signal: AbortSignal;
+  onProgress?: (update: ProgressUpdate) => void;
 }
 
 export interface ToolEntry {
@@ -42,13 +44,13 @@ const createToolErrorResult = <T>(code: string, message: string): McpToolResult<
 export const createUnknownToolResult = <T>(toolName: string): McpToolResult<T> =>
   createToolErrorResult("COMMAND_NOT_FOUND", `unknown tool: ${toolName}`);
 
-export const getToolInputSchema = (entry: ToolEntry): Record<string, unknown> => {
+const getToolInputSchema = (entry: ToolEntry): Record<string, unknown> => {
   const model = buildInputModel(entry.def);
   assertUniqueInputKeys(model, ["args", "options"]);
   return getInputJsonSchema(model, ["args", "options"]);
 };
 
-export const getToolOutputSchema = (entry: ToolEntry): Record<string, unknown> | undefined => {
+const getToolOutputSchema = (entry: ToolEntry): Record<string, unknown> | undefined => {
   if (!entry.def.outputSchema) return undefined;
   return {
     type: "object",
@@ -105,13 +107,16 @@ export const getToolEntries = (root: CommandNode): ToolEntry[] => {
   return tools;
 };
 
+export const createToolDefinition = (entry: ToolEntry): McpToolDefinition => ({
+  name: entry.name,
+  description: entry.description,
+  inputSchema: getToolInputSchema(entry),
+  ...(entry.def.outputSchema ? { outputSchema: getToolOutputSchema(entry) } : {}),
+  ...(entry.def.annotations ? { annotations: { ...entry.def.annotations } } : {}),
+});
+
 export const listTools = (root: Cli): McpToolDefinition[] => {
-  return getToolEntries(root).map((entry) => ({
-    name: entry.name,
-    description: entry.description,
-    inputSchema: getToolInputSchema(entry),
-    ...(entry.def.outputSchema ? { outputSchema: getToolOutputSchema(entry) } : {}),
-  }));
+  return getToolEntries(root).map(createToolDefinition);
 };
 
 const invokeToolCommand = async <T>(
@@ -144,6 +149,8 @@ const invokeToolCommand = async <T>(
     hasStdin: false,
     rest: [],
     readStdin: async () => "",
+    signal: opts.signal,
+    onProgress: opts.onProgress,
     suppressConsole: true,
     nodeEnv: opts.env.NODE_ENV,
   });
@@ -169,9 +176,13 @@ export const invokeTool = async <T = unknown>(
   root: Cli,
   toolName: string,
   args: Record<string, unknown> = {},
-  opts: McpRuntimeOptions = {},
+  opts: McpInvokeOptions = {},
 ): Promise<McpToolResult<T>> => {
-  const runtimeOptions = { env: opts.env ?? process.env };
+  const runtimeOptions = {
+    env: opts.env ?? process.env,
+    signal: opts.signal ?? new AbortController().signal,
+    onProgress: opts.onProgress,
+  };
   const entry = getToolEntries(root).find((tool) => tool.name === toolName);
   if (!entry) return createUnknownToolResult(toolName);
   return invokeToolEntry<T>(root, entry, args, runtimeOptions);

@@ -159,6 +159,8 @@ Common definition fields:
 | `rest` | Declares the command reads raw tokens after `--`; adds `[-- <args...>]` to usage, with an optional description |
 | `notes` | Free-form prose appended to generated help after the examples |
 | `help` | Replace generated help: a string, or `(generatedHelp) => string` to wrap it |
+| `interrupt` | What SIGINT and SIGTERM do while `run()` executes on a terminal: `"exit"` (default) terminates the process; `"abort"` aborts `signal` and waits for `run()` to return. Also changes how the `--mcp` server stops; see [Cancellation and progress](#cancellation-and-progress) |
+| `annotations` | MCP tool hints published in the tool listing: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` |
 | `run` | Command handler |
 | `version` | Value printed by `--version` |
 
@@ -206,6 +208,8 @@ Context fields:
 | `hasStdin` | stdin is piped — the standard CLI heuristic (stdin is not an interactive terminal), so file redirection also counts |
 | `rest` | tokens after `--` |
 | `readStdin()` | read piped stdin |
+| `signal` | `AbortSignal` for this invocation; aborts when the caller cancels it (see [Cancellation and progress](#cancellation-and-progress)) |
+| `reportProgress(update)` | report `{ progress, total?, message? }`; sent as MCP progress notifications when the client asks for them |
 
 ### Zod coercion
 
@@ -405,6 +409,53 @@ app.command("doctor", {
 });
 ```
 
+### Cancellation and progress
+
+Every handler receives `signal`, an `AbortSignal` for its own invocation, and `reportProgress`.
+`signal` aborts when the caller cancels that invocation:
+
+- on a terminal, on SIGINT (Ctrl+C) or SIGTERM, but only for commands with `interrupt: "abort"`
+- over MCP, when the client cancels that call (`notifications/cancelled`) or the connection
+  closes, including the client closing the server's stdin
+- with the testkit, `serve(argv, { signal })`, or `invokeTool(..., { signal })`, when the signal
+  you pass aborts
+
+By default (`interrupt: "exit"`), SIGINT and SIGTERM keep Node's behavior and terminate the
+process at once. With `interrupt: "abort"`, the first one aborts `signal`, later ones are
+ignored, and the process stays alive until the handler returns, so cleanup such as stopping
+child processes is never cut short. The handler's return value is printed as usual; set
+`process.exitCode` (for example `130`) if a cancelled run should exit nonzero. Passing `signal`
+to `serve()` makes you the owner of cancellation for that command run: gunsmith then leaves
+SIGINT and SIGTERM alone during the run. The `--mcp` server ignores the option.
+
+The `--mcp` server handles these signals for its whole process: when any tool has
+`interrupt: "abort"`, SIGINT or SIGTERM closes the server, which aborts every in-flight call
+whatever each command's `interrupt`. However the connection closes, the server waits for
+in-flight calls to return before `serve()` resolves.
+
+```ts
+app.command("scan", {
+  interrupt: "abort",
+  args: z.object({ hosts: z.array(z.string()) }),
+  run: async ({ args, signal, reportProgress }) => {
+    const results = [];
+    for (const [index, host] of args.hosts.entries()) {
+      if (signal.aborted) break;
+      results.push(await probe(host, { signal }));
+      reportProgress({ progress: index + 1, total: args.hosts.length, message: host });
+    }
+    if (signal.aborted) process.exitCode = 130;
+    return { results, cancelled: signal.aborted };
+  },
+});
+```
+
+`reportProgress({ progress, total?, message? })` sends an MCP `notifications/progress` when the
+client asked for progress (its request carried a progress token). On a terminal, and over MCP
+without a token, it does nothing; the testkit records every update. MCP requires `progress` to
+increase with each update, so gunsmith throws a `RangeError` on every surface when it does not,
+or when a value is not a finite number.
+
 ### JSON output contract
 
 `--json` makes stdout a single JSON line — on success **and** on failure — so scripts parse
@@ -430,7 +481,8 @@ Rules scripts can rely on:
 - success output is your returned data with no wrapper — it composes directly with `jq` and pipes
 - failure output is always the `{"ok":false,"error":{code,message}}` envelope, on **stdout**;
   codes are `VALIDATION`, `USAGE`, `COMMAND_NOT_FOUND`, `UNKNOWN` (exit codes `2`/`2`/`2`/`1`
-  also reflect the outcome, but parsing stdout is sufficient)
+  also reflect the outcome, but parsing stdout is sufficient), plus any code a handler raises
+  with [`CommandError`](#signaling-errors-from-handlers)
 - the success/failure asymmetry is intentional: raw data keeps piping friction-free while
   failures stay machine-distinguishable
 
@@ -441,8 +493,7 @@ encodes exactly that union.
 
 Throw `UsageError` for user mistakes — cross-flag rules, missing files, anything schema
 validation can't express. It renders as `error: message` and exits `2`, exactly like gunsmith's
-own validation errors. Any other thrown error is treated as unexpected: same rendering, exit
-`1`, and `DEBUG=1` prints its stack to stderr.
+own validation errors.
 
 ```ts
 import { UsageError } from "gunsmith";
@@ -454,6 +505,20 @@ run: ({ options }) => {
 },
 ```
 
+Throw `CommandError` when scripts and agents need to tell your failures apart. Its code becomes
+`error.code` in the `--json` and MCP envelopes, and you choose the exit code: `1` (the default)
+for a failure, or `2` for a usage-like refusal. Pick codes of your own; the built-in codes keep
+their gunsmith meaning.
+
+```ts
+import { CommandError } from "gunsmith";
+
+throw new CommandError("scope-refused", `${target} is outside the allowed scope`, { exitCode: 2 });
+```
+
+Any other thrown error is treated as unexpected: same rendering, exit `1`, and `DEBUG=1` prints
+its stack to stderr.
+
 Error codes (`USAGE`, `VALIDATION`, `UNKNOWN`, ...) never appear in human output — they live in
 the [JSON output contract](#json-output-contract) envelope and MCP results.
 
@@ -463,7 +528,8 @@ The boundary is intentional: user mistakes are runtime UX, developer mistakes cr
 startup. Caught, rendered, and turned into exit codes (they never reach your code):
 
 - anything thrown from `run()` — rendered as `error: message` (or the JSON error envelope);
-  exit `1` for plain errors, exit `2` for a thrown `UsageError`
+  exit `1` for plain errors, exit `2` for a thrown `UsageError`, and the chosen exit code for a
+  thrown `CommandError`
 - schema validation failures and argv problems (unknown options or commands, missing values,
   excess positionals) — exit `2`
 
@@ -485,8 +551,8 @@ await app.serve();
 // let it crash with the stack, or map it explicitly if you prefer
 ```
 
-Set `DEBUG=1` to print stack traces for unexpected (non-`GunsmithError`) handler errors to
-stderr.
+Set `DEBUG=1` to print stack traces for unexpected handler errors (neither `GunsmithError` nor
+`CommandError`) to stderr.
 
 | Flag | Effect |
 | ---- | ------ |
@@ -541,7 +607,21 @@ command name, and it is intercepted as a first argument while `features.completi
 
 `--mcp` starts a stdio MCP server. Every non-hidden runnable command becomes a tool. Nested command
 names are joined with `_`. Input schemas come from args and options. Output schemas are generated
-from `outputSchema`.
+from `outputSchema`. A command's `annotations` (`readOnlyHint`, `destructiveHint`,
+`idempotentHint`, `openWorldHint`) are published with its tool, so clients can, for example,
+allow read-only tools without asking:
+
+```ts
+app.command("status", {
+  annotations: { readOnlyHint: true, openWorldHint: false },
+  run: () => ({ clean: true }),
+});
+```
+
+Each tool call gets its own `signal` and `reportProgress`: the client's cancellation of a call
+aborts only that call, and progress reaches clients that ask for it. See
+[Cancellation and progress](#cancellation-and-progress) for how the server handles closing and
+termination signals.
 
 The MCP SDK is lazy-loaded through `gunsmith/mcp`; install `@modelcontextprotocol/sdk` if you use
 `--mcp` or import that subpath.
@@ -584,6 +664,19 @@ await runCli(app, ["Ada"], { isTTY: true, env: { NO_COLOR: "1" }, stdin: "piped 
 
 `runJson().json` follows the [JSON output contract](#json-output-contract): the returned data on
 success, the `{"ok":false,"error":{...}}` envelope on failure.
+
+Every result also carries `progress`, the handler's `reportProgress` updates in order, recorded
+even though a real terminal discards them. Pass `signal` to cancel a run: aborting it aborts the
+handler's `signal`, and the run still resolves only after the handler returns. `invokeTool` from
+`gunsmith/mcp` takes the same `signal`, plus an `onProgress` callback for progress updates.
+
+```ts
+const r = await runJson(app, ["scan", "a.example", "b.example"]);
+expect(r.progress).toEqual([
+  { progress: 1, total: 2, message: "a.example" },
+  { progress: 2, total: 2, message: "b.example" },
+]);
+```
 
 ### Environment semantics
 

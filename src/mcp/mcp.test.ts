@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
-import cli, { Cli } from "../index";
-import { invokeTool, listTools } from "./index";
+import cli, { Cli, type ProgressUpdate } from "../index";
+import { buildServer, invokeTool, listTools } from "./index";
 
 const createDemoCli = () => {
   const root = cli.create("demo", { version: "1.0.0" });
@@ -15,6 +17,23 @@ const createDemoCli = () => {
   root.command(task);
   root.command("status", { run: () => ({ clean: true }) });
   return root;
+};
+
+const connectClient = async (root: Cli) => {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await buildServer(root).connect(serverTransport);
+  const client = new Client({ name: "test", version: "1.0.0" });
+  await client.connect(clientTransport);
+
+  return client;
+};
+
+const waitForAbort = (signal: AbortSignal) => {
+  if (signal.aborted) return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
 };
 
 const expectTextContent = (result: {
@@ -125,6 +144,23 @@ describe("listTools", () => {
       run: () => {},
     });
     expect(() => listTools(root)).toThrow("schema fields must be unique");
+  });
+
+  test("tool listings carry the command's annotations", async () => {
+    const root = cli.create("app");
+    root.command("scan", {
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      run: () => ({}),
+    });
+    root.command("status", { run: () => ({}) });
+
+    const expected = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
+    expect(listTools(root).map((tool) => tool.annotations)).toEqual([expected, undefined]);
+
+    const client = await connectClient(root);
+    const listed = await client.listTools();
+    await client.close();
+    expect(listed.tools.map((tool) => tool.annotations)).toEqual([expected, undefined]);
   });
 
   test("includes outputSchema for commands that define one", () => {
@@ -260,6 +296,92 @@ describe("invokeTool", () => {
         error: { code: "COMMAND_NOT_FOUND", message: "unknown tool: purge" },
       },
     });
+  });
+});
+
+describe("tool call cancellation and progress", () => {
+  test("a client's cancellation aborts only that call's signal", async () => {
+    const firstHandlerSignal = Promise.withResolvers<AbortSignal>();
+    const secondHandlerSignal = Promise.withResolvers<AbortSignal>();
+    const handlerSignalsById = { first: firstHandlerSignal, second: secondHandlerSignal };
+    const root = cli.create("app");
+    root.command("wait", {
+      args: z.object({ id: z.enum(["first", "second"]) }),
+      run: async ({ args, signal }) => {
+        handlerSignalsById[args.id].resolve(signal);
+        await waitForAbort(signal);
+
+        return { id: args.id };
+      },
+    });
+
+    const client = await connectClient(root);
+    const first = new AbortController();
+    const settle = (call: Promise<unknown>) => call.then(() => undefined, () => undefined);
+    const firstCall = settle(
+      client.callTool({ name: "wait", arguments: { id: "first" } }, undefined, { signal: first.signal }),
+    );
+    const secondCall = settle(client.callTool({ name: "wait", arguments: { id: "second" } }));
+    const [firstSignal, secondSignal] = await Promise.all([
+      firstHandlerSignal.promise,
+      secondHandlerSignal.promise,
+    ]);
+
+    first.abort();
+    await waitForAbort(firstSignal);
+    expect(secondSignal.aborted).toBe(false);
+
+    await client.close();
+    await Promise.all([firstCall, secondCall]);
+  });
+
+  test("progress updates become progress notifications when the client asks for them", async () => {
+    const root = cli.create("app");
+    root.command("scan", {
+      run: ({ reportProgress }) => {
+        reportProgress({ progress: 1, total: 2, message: "probing" });
+        reportProgress({ progress: 2, total: 2 });
+
+        return { done: true };
+      },
+    });
+
+    const client = await connectClient(root);
+    const updates: unknown[] = [];
+
+    const result = await client.callTool({ name: "scan", arguments: {} }, undefined, {
+      onprogress: (update) => {
+        updates.push(update);
+      },
+    });
+    await client.close();
+    expect(result.structuredContent).toEqual({ ok: true, data: { done: true } });
+    expect(updates).toEqual([{ progress: 1, total: 2, message: "probing" }, { progress: 2, total: 2 }]);
+  });
+
+  test("invokeTool passes its signal and progress callback to the handler", async () => {
+    const root = cli.create("app");
+    root.command("scan", {
+      run: async ({ signal, reportProgress }) => {
+        reportProgress({ progress: 1, message: "started" });
+        await waitForAbort(signal);
+
+        return { outcome: "cancelled" };
+      },
+    });
+
+    const controller = new AbortController();
+    const updates: ProgressUpdate[] = [];
+
+    const result = await invokeTool(root, "scan", {}, {
+      signal: controller.signal,
+      onProgress: (update) => {
+        updates.push(update);
+        controller.abort();
+      },
+    });
+    expect(result.structuredContent).toEqual({ ok: true, data: { outcome: "cancelled" } });
+    expect(updates).toEqual([{ progress: 1, message: "started" }]);
   });
 });
 

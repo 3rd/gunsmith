@@ -1,5 +1,6 @@
 import { format } from "node:util";
 import type { Cli } from "../create";
+import type { ProgressUpdate } from "../types/commands";
 import type { TestJsonRunResult, TestJsonValue, TestRunOptions, TestRunResult } from "../types/testing";
 import { type ConsoleCapture, withConsoleCapture } from "../runtime/console";
 export type { TestJsonRunResult, TestJsonValue, TestRunOptions, TestRunResult } from "../types/testing";
@@ -8,6 +9,7 @@ interface CapturedOutput {
   stdout: string[];
   stderr: string[];
   exitCode: number;
+  progress: ProgressUpdate[];
   wroteFrameworkStdout: boolean;
 }
 
@@ -42,6 +44,7 @@ const runCliWithOutputFormat = async <T>(
     stdout: [],
     stderr: [],
     exitCode: 0,
+    progress: [],
     wroteFrameworkStdout: false,
   };
   const stdin = opts.stdin;
@@ -64,19 +67,25 @@ const runCliWithOutputFormat = async <T>(
       stdin: readStdin,
       hasStdin: stdin !== undefined,
       format: outputFormat,
+      signal: opts.signal ?? new AbortController().signal,
+      onProgress: (update) => {
+        output.progress.push(update);
+      },
     });
   });
 
   const stdout = output.stdout.join("");
   const stderr = output.stderr.join("");
+  const { exitCode, progress } = output;
   if (outputFormat !== "json" && !output.wroteFrameworkStdout) {
-    return { stdout, stderr, exitCode: output.exitCode, json: undefined, hasJson: false };
+    return { stdout, stderr, exitCode, progress, json: undefined, hasJson: false };
   }
   const parsed = parseJsonResult<T>(stdout);
   return {
     stdout: parsed.stdout,
     stderr,
-    exitCode: output.exitCode,
+    exitCode,
+    progress,
     json: parsed.json,
     hasJson: parsed.hasJson,
   };

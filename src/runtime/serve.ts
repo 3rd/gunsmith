@@ -19,6 +19,7 @@ import {
   renderCompletionScript,
 } from "./completions";
 import { parseCommandInput } from "./input";
+import { interceptInterrupts } from "./interrupt";
 import { invokeCommand } from "./invoke";
 
 const loadMcp = async () => {
@@ -243,6 +244,12 @@ const runCommandInvocation = async (ctx: ServeContext) => {
     propagateNoColor && isForceColorOn(process.env.FORCE_COLOR) ? process.env.FORCE_COLOR : undefined;
   if (setNoColor) process.env.NO_COLOR = "1";
   if (forceColorToRestore !== undefined) process.env.FORCE_COLOR = "0";
+
+  const interruptController = new AbortController();
+  const shouldInterceptInterrupts = opts.signal === undefined && invocation.def.interrupt === "abort";
+  const restoreInterrupts =
+    shouldInterceptInterrupts ? interceptInterrupts(() => interruptController.abort()) : undefined;
+
   try {
     const cmdFlags = new Map(
       [...parsedGlobals.tokens.flags].filter(([name]) => !parsedGlobals.globalNames.has(name)),
@@ -278,6 +285,8 @@ const runCommandInvocation = async (ctx: ServeContext) => {
       hasStdin,
       rest: parsedGlobals.tokens.rest,
       readStdin: opts.stdin ?? readProcessStdin,
+      signal: opts.signal ?? interruptController.signal,
+      onProgress: opts.onProgress,
       suppressConsole: parsedGlobals.isJSON,
       debug: env.DEBUG ? stderr : undefined,
       nodeEnv: env.NODE_ENV,
@@ -285,6 +294,8 @@ const runCommandInvocation = async (ctx: ServeContext) => {
 
     return finishCommand(ctx, result);
   } finally {
+    restoreInterrupts?.();
+
     if (setNoColor) delete process.env.NO_COLOR;
     if (forceColorToRestore !== undefined) process.env.FORCE_COLOR = forceColorToRestore;
   }
